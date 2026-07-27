@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Archivo de Hallazgos</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/docx"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root{
+  --ink: #16232F;
+  --ink-soft: #5C6873; /* Ligeramente más oscuro para contraste en blanco */
+  --paper: #FFFFFF;    /* Ajustado a Blanco */
+  --paper-raised: #FFFFFF; /* Ajustado a Blanco */
+  --line: #E1E0D9;     /* Ligeramente más oscuro para definir sobre blanco */
+  --accent: #3E6F65;
+  --accent-dark: #2C5049;
+  --risk-alta: #A5382F;
+  --risk-media: #B9812C;
+  --risk-baja: #4C7A5D;
+  --shadow: 0 1px 3px rgba(22,35,47,0.05), 0 3px 10px rgba(22,35,47,0.04); /* Sombra más suave */
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Inter', sans-serif;
+  min-height:100vh;
+  display: flex;
+  flex-direction: column;
+}
+.serif{ font-family:'Source Serif 4', serif; }
+.mono{ font-family:'IBM Plex Mono', monospace; }
+
+/* ---------- gate ---------- */
+.gate-wrap{
+  flex: 1;
+  display:flex; align-items:center; justify-content:center;
+  padding:24px;
+}
+.gate-card{
+  width:100%; max-width:400px;
+  background: var(--paper-raised);
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:40px 36px;
+  box-shadow: var(--shadow);
+  position:relative;
+}
+.gate-card::before{
+  content:"";
+  position:absolute; top:0; left:28px; width:2px; height:100%;
+  background: repeating-linear-gradient(to bottom, var(--line) 0 6px, transparent 6px 12px);
+  opacity:0.5;
+}
+.gate-eyebrow{
+  font-family:'IBM Plex Mono', monospace;
+  font-size:11px; letter-spacing:0.14em; text-transform:uppercase;
+  color: var(--accent-dark); margin-bottom:10px;
+}
+.gate-title{
+  font-family:'Source Serif 4', serif;
+  font-size:26px; font-weight:600; margin-bottom:8px;
+}
+.gate-sub{
+  font-size:13.5px; color:var(--ink-soft); line-height:1.5; margin-bottom:26px;
+}
+.field{ margin-bottom:16px; }
+.field label{
+  display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:0.06em;
+  color:var(--ink-soft); margin-bottom:6px; font-weight:500;
+}
+input[type=password], input[type=text], input[type=date], textarea, select{
+  width:100%; padding:11px 12px;
+  border:1px solid var(--line); border-radius:4px;
+  background:#fff; color:var(--ink);
+  font-family:'Inter', sans-serif; font-size:14px;
+  outline:none;
+}
+input:focus, textarea:focus, select:focus{ border-color:var(--accent); box-shadow:0 0 0 3px rgba(62,111,101,0.1); }
+textarea{ resize:vertical; min-height:70px; line-height:1.5; }
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  border:none; border-radius:4px; cursor:pointer;
+  font-family:'Inter', sans-serif; font-weight:600; font-size:13.5px;
+  padding:11px 18px; transition:transform .12s ease, background .15s ease;
+}
+.btn:active{ transform:scale(0.98); }
+.btn-primary{ background:var(--ink); color:#FFFFFF; width:100%; }
+.btn-primary:hover{ background:var(--accent-dark); }
+.btn-ghost{ background:transparent; color:var(--ink-soft); border:1px solid var(--line); }
+.btn-ghost:hover{ border-color:var(--ink-soft); color:var(--ink); }
+.gate-error{ color:var(--risk-alta); font-size:13px; margin-top:10px; min-height:16px; }
+.gate-foot{ margin-top:18px; font-size:12px; color:var(--ink-soft); text-align:center; }
+.gate-foot a{ color:var(--accent-dark); cursor:pointer; text-decoration:underline; }
+
+/* ---------- app shell ---------- */
+.hidden{ display:none !important; }
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:18px 32px; border-bottom:1px solid var(--line);
+  background:var(--paper-raised);
+  position:sticky; top:0; z-index:10;
+}
+.brand{ display:flex; align-items:center; gap:10px; }
+.brand-mark{
+  width:26px; height:26px; border-radius:3px; background:var(--ink);
+  display:flex; align-items:center; justify-content:center;
+  color:#FFFFFF; font-family:'Source Serif 4',serif; font-weight:700; font-size:14px;
+}
+.brand-name{ font-family:'Source Serif 4', serif; font-size:17px; font-weight:600; }
+.brand-name span{ color:var(--accent-dark); }
+.top-actions{ display:flex; gap:10px; align-items:center; }
+.top-actions button{ padding:9px 14px; font-size:13px; }
+
+.hero{
+  padding:52px 32px 28px; max-width:900px; margin:0 auto; text-align:center;
+}
+.hero-eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:var(--accent-dark); margin-bottom:14px;}
+.hero h1{ font-family:'Source Serif 4', serif; font-size:34px; font-weight:600; margin-bottom:18px; line-height:1.2;}
+.search-box{
+  position:relative; max-width:640px; margin:0 auto;
+}
+.search-box input{
+  width:100%; padding:16px 46px 16px 18px; border-radius:6px;
+  border:1.5px solid var(--ink); font-size:15px; background:#fff;
+}
+.search-box svg{ position:absolute; right:16px; top:50%; transform:translateY(-50%); pointer-events:none; }
+.hero-stats{ margin-top:14px; font-size:12.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; }
+
+.content{ flex: 1; max-width:980px; margin:0 auto; padding:10px 32px 40px; } /* Ajuste padding inferior */
+.results-count{ font-size:12.5px; color:var(--ink-soft); margin-bottom:16px; font-family:'IBM Plex Mono',monospace; }
+
+.layout{ display:flex; max-width:1180px; margin:0 auto; gap:30px; padding:0 32px 40px; align-items:flex-start; flex: 1; } /* Ajuste padding e inserción flex */
+.layout .content{ max-width:none; margin:0; padding:0; flex:1; min-width:0; }
+.sidebar{
+  width:220px; flex-shrink:0; background:var(--paper-raised); border:1px solid var(--line);
+  border-radius:6px; padding:20px; position:sticky; top:88px;
+}
+.sidebar-title{ font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-soft); font-weight:600; margin-bottom:14px; }
+.cat-filter-item{ display:flex; align-items:center; gap:9px; padding:7px 0; font-size:13px; color:var(--ink); cursor:pointer; }
+.cat-filter-item input{ width:auto; margin:0; accent-color:var(--accent-dark); }
+.cat-filter-count{ margin-left:auto; color:var(--ink-soft); font-size:11.5px; font-family:'IBM Plex Mono',monospace; }
+.cat-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+.cat-filter-reset{ font-size:12px; color:var(--accent-dark); cursor:pointer; text-decoration:underline; margin-top:8px; display:inline-block; background:none; border:none; padding:0; }
+@media(max-width:820px){ .layout{ flex-direction:column; } .sidebar{ width:100%; position:static; } }
+
+.tag-cat{
+  display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600;
+  text-transform:uppercase; letter-spacing:0.03em;
+}
+.tag-cat-tributario{ background:rgba(44,90,140,0.1); color:#2C5A8C; }
+.tag-cat-control_interno{ background:rgba(62,111,101,0.1); color:var(--accent-dark); }
+.tag-cat-legal{ background:rgba(91,75,138,0.1); color:#5B4B8A; }
+.tag-cat-contable{ background:rgba(185,129,44,0.1); color:var(--risk-media); }
+.tag-cat-ajustes_reclasificaciones{ background:rgba(140,74,47,0.1); color:#8C4A2F; }
+.tag-cat-sgsst{ background:rgba(76,122,93,0.1); color:var(--risk-baja); }
+.ficha-full{ grid-column: 1 / -1; }
+
+.gen-search{ margin-bottom:12px; }
+.gen-list{ max-height:48vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:4px; }
+.gen-row{ display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+.gen-row input[type=checkbox]{ width:auto; margin-top:3px; accent-color:var(--accent-dark); }
+.gen-row-code{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-soft); }
+.gen-row-title{ font-size:13.5px; font-weight:600; margin:2px 0; }
+.gen-row-sub{ font-size:12px; color:var(--ink-soft); }
+.gen-count{ font-size:12.5px; color:var(--ink-soft); margin-bottom:12px; font-family:'IBM Plex Mono',monospace; }
+
+.empty-state{
+  text-align:center; padding:60px 20px; color:var(--ink-soft);
+}
+.empty-state .serif{ font-size:19px; color:var(--ink); margin-bottom:8px; }
+
+.ficha{
+  background:var(--paper-raised); border:1px solid var(--line); border-radius:6px;
+  margin-bottom:14px; position:relative; overflow:hidden;
+  box-shadow: var(--shadow);
+  transition: transform .15s ease;
+}
+.ficha:hover{ transform: translateY(-1px); border-color: #CCCBC0; } /* Borde un poco más oscuro al hover */
+.ficha-tab{ position:absolute; left:0; top:0; bottom:0; width:5px; }
+.ficha-inner{ padding:20px 22px 20px 26px; }
+.ficha-head{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:10px;}
+.ficha-code{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft); }
+.ficha-meta{ display:flex; gap:10px; align-items:center; font-size:12px; color:var(--ink-soft); }
+.tag{
+  display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600;
+  text-transform:uppercase; letter-spacing:0.03em;
+}
+.tag-alta{ background:rgba(165,56,47,0.1); color:var(--risk-alta); }
+.tag-media{ background:rgba(185,129,44,0.12); color:var(--risk-media); }
+.tag-baja{ background:rgba(76,122,93,0.1); color:var(--risk-baja); }
+.ficha-titulo{ font-family:'Source Serif 4', serif; font-size:17px; font-weight:700; margin-bottom:4px; }
+.ficha-informe{ font-family:'Source Serif 4', serif; font-size:14px; color:var(--ink-soft); font-weight:500; margin-bottom:12px; }
+.ficha-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+@media(max-width:680px){ .ficha-grid{ grid-template-columns:1fr; } }
+.ficha-field-label{ font-size:10.5px; text-transform:uppercase; letter-spacing:0.07em; color:var(--accent-dark); font-weight:600; margin-bottom:4px;}
+.ficha-field-text{ font-size:13.5px; line-height:1.55; color:var(--ink); }
+.ficha-actions{ display:flex; gap:8px; margin-top:14px; }
+.ficha-actions button{ padding:6px 12px; font-size:12px; }
+
+.fab{
+  position:fixed; bottom:28px; right:28px;
+  background:var(--ink); color:#FFFFFF; border:none; border-radius:50px;
+  padding:14px 22px; font-weight:600; font-size:14px; cursor:pointer;
+  box-shadow:0 6px 18px rgba(22,35,47,0.2); display:flex; gap:8px; align-items:center;
+  transition: background .15s ease, transform .12s ease;
+  z-index: 20;
+}
+.fab:hover{ background:var(--accent-dark); }
+.fab:active{ transform:scale(0.97); }
+
+/* ---------- modal ---------- */
+.overlay{
+  position:fixed; inset:0; background:rgba(22,35,47,0.4);
+  display:flex; align-items:flex-start; justify-content:center;
+  padding:40px 20px; overflow-y:auto; z-index:50;
+}
+.modal{
+  background:var(--paper-raised); border-radius:8px; width:100%; max-width:620px;
+  padding:32px 32px 28px; border:1px solid var(--line);
+  animation: rise .18s ease;
+}
+@keyframes rise{ from{ opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+.modal-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; }
+.modal-title{ font-family:'Source Serif 4', serif; font-size:20px; font-weight:600; }
+.modal-close{ background:none; border:none; cursor:pointer; color:var(--ink-soft); font-size:20px; line-height:1; padding:4px;}
+.row2{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+@media(max-width:520px){ .row2{ grid-template-columns:1fr; } }
+.modal-actions{ display:flex; gap:10px; margin-top:22px; }
+.modal-actions .btn-primary{ flex:1; }
+
+.toast{
+  position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
+  background:var(--ink); color:#fff; padding:11px 20px; border-radius:6px;
+  font-size:13.5px; z-index:100; box-shadow:var(--shadow);
+}
+.spinner{
+  width:18px; height:18px; border-radius:50%; border:2px solid rgba(255,255,255,0.3);
+  border-top-color:#fff; animation: spin .7s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+.loading-center{ min-height:100vh; display:flex; align-items:center; justify-content:center; color:var(--ink-soft); font-size:13px; gap:10px;}
+.loading-center .spinner{ border-color: rgba(22,35,47,0.15); border-top-color:var(--ink-soft); }
+
+/* import flow */
+.import-drop{
+  border:1.5px dashed var(--line); border-radius:6px; padding:36px 20px; text-align:center;
+  cursor:pointer; transition:border-color .15s ease, background .15s ease;
+}
+.import-drop:hover{ border-color:var(--accent); background:rgba(62,111,101,0.04); }
+.import-drop .serif{ font-size:16px; margin-bottom:6px; }
+.import-drop-sub{ font-size:12.5px; color:var(--ink-soft); }
+.import-status{ display:flex; flex-direction:column; align-items:center; gap:14px; padding:40px 10px; text-align:center; }
+.import-status .spinner{ width:24px; height:24px; border-color: rgba(22,35,47,0.15); border-top-color:var(--accent-dark); }
+.import-status-text{ font-size:13.5px; color:var(--ink-soft); }
+.import-error{ color:var(--risk-alta); font-size:13.5px; text-align:center; padding:20px 0; }
+.review-count{ font-size:12.5px; color:var(--ink-soft); margin-bottom:14px; font-family:'IBM Plex Mono',monospace; }
+.review-list{ max-height:52vh; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-right:4px; }
+.review-item{ border:1px solid var(--line); border-radius:6px; padding:14px 16px; background:#fff; }
+.review-item-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; }
+.review-item-head select{ width:auto; padding:5px 8px; font-size:12px; }
+.review-remove{ background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:16px; padding:2px 6px; }
+.review-remove:hover{ color:var(--risk-alta); }
+.review-item textarea, .review-item input{ font-size:13px; padding:8px 10px; margin-bottom:8px; }
+.review-item-label{ font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--accent-dark); font-weight:600; margin-bottom:3px; }
+
+/* ---------- footer (marca personal) ---------- */
+.app-footer {
+  padding: 16px 32px;
+  text-align: left;
+  font-size: 10px;
+  color: #70246b; /* Muy tenue sobre blanco */
+  font-family: 'IBM Plex Mono', monospace;
+  user-select: none; /* Evita selección accidental */
+  border-top: 1px solid #F5F5F0; /* Línea divisoria casi invisible */
+  background: #ffffff;
+}
+</style>
+</head>
+<body>
+
+<div id="loading" class="loading-center"><div class="spinner"></div><span>Cargando archivo…</span></div>
+
+<!-- GATE -->
+<div id="gate" class="gate-wrap hidden">
+  <div class="gate-card">
+    <div class="gate-eyebrow">Acceso Auditores</div>
+    <div id="gateTitle" class="gate-title">HallazGo <br>Buscador de Hallazgos</div>
+    <div id="gateSub" class="gate-sub">Ingresa la contraseña del equipo para consultar el histórico de hallazgos, riesgos, recomendaciones y normatividad.</div>
+    <div class="field">
+      <label for="gateUser">Usuario</label>
+      <input type="text" id="gateUser" placeholder="usuario del equipo" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="gatePass">Contraseña</label>
+      <input type="password" id="gatePass" placeholder="••••••••" autocomplete="off">
+    </div>
+    <div id="gateConfirmWrap" class="field hidden">
+      <label for="gatePass2">Confirmar contraseña</label>
+      <input type="password" id="gatePass2" placeholder="••••••••" autocomplete="off">
+    </div>
+    <button class="btn btn-primary" id="gateBtn">Entrar</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-foot" id="gateFoot"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">YA</div>
+      <div class="brand-name">Biblioteca de <span>Hallazgos</span></div>
+    </div>
+    <div class="top-actions">
+      <button class="btn btn-ghost" id="generateBtn">Generar informe</button>
+      <button class="btn btn-ghost" id="importBtn">Subir datos de un informe</button>
+      <button class="btn btn-ghost" id="changePassBtn">Cambiar usuario/contraseña</button>
+      <button class="btn btn-ghost" id="logoutBtn">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-eyebrow">Buscador de informes</div>
+    <h1 class="serif">Encuentra cualquier hallazgo, riesgo o recomendación</h1>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Buscar por hallazgo, riesgo, recomendación, normatividad o palabra clave">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5C6873" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </div>
+    <div class="hero-stats" id="heroStats"></div>
+  </div>
+
+  <!-- Layout Principal con flex:1 para empujar el footer -->
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-title">Filtrar por categoría</div>
+      <div id="categoryFilters"></div>
+      <button class="cat-filter-reset hidden" id="catResetBtn">Quitar filtros</button>
+    </aside>
+    <div class="content">
+      <div class="results-count" id="resultsCount"></div>
+      <div id="resultsList"></div>
+    </div>
+  </div>
+
+  <!-- Pie de página discreto -->
+  <footer class="app-footer">
+    Desarrollado por Karol Tatiana Lesmes
+  </footer>
+
+  <button class="fab" id="newBtn">+ Nuevo hallazgo</button>
+</div>
+
+<!-- MODAL: nuevo/editar -->
+<div id="modalOverlay" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="modalTitle">Nuevo hallazgo</div>
+      <button class="modal-close" id="modalClose">✕</button>
+    </div>
+    <div class="field">
+      <label>Título del hallazgo</label>
+      <input type="text" id="fTitulo" placeholder="Ej: Realizar actualización registro de base de datos ante la SIC…">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Informe / fuente</label>
+        <input type="text" id="fInforme" placeholder="Ej: Informe de auditoría corte jun 202...">
+      </div>
+      <div class="field">
+        <label>Fecha</label>
+        <input type="date" id="fFecha">
+      </div>
+    </div>
+    <div class="field">
+      <label>Hallazgo</label>
+      <textarea id="fHallazgo" placeholder="Describe el hallazgo encontrado…"></textarea>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Nivel de riesgo</label>
+        <select id="fNivel">
+          <option value="alta">Alta</option>
+          <option value="media" selected>Media</option>
+          <option value="baja">Baja</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Categoría</label>
+        <select id="fCategoria"></select>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Riesgo</label>
+        <input type="text" id="fRiesgo" placeholder="Descripción breve del riesgo">
+      </div>
+      <div class="field">
+        <label>Beneficio</label>
+        <input type="text" id="fBeneficio" placeholder="Beneficio de implementar la recomendación (si aplica)">
+      </div>
+    </div>
+    <div class="field">
+      <label>Recomendación</label>
+      <textarea id="fRecomendacion" placeholder="Recomendación propuesta…"></textarea>
+    </div>
+    <div class="field">
+      <label>Normatividad relacionada</label>
+      <textarea id="fNormatividad" placeholder="Ej: Decreto Único, Ley, Art, etc..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="deleteBtn">Eliminar</button>
+      <button class="btn btn-primary" id="saveBtn">Guardar hallazgo</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: importar desde Word -->
+<div id="importOverlay" class="overlay hidden">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-head">
+      <div class="modal-title" id="importTitle">Importar desde Word</div>
+      <button class="modal-close" id="importClose">✕</button>
+    </div>
+    <div id="importBody"></div>
+  </div>
+</div>
+
+<!-- MODAL: generar informe -->
+<div id="generateOverlay" class="overlay hidden">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-head">
+      <div class="modal-title">Generar informe con hallazgos seleccionados</div>
+      <button class="modal-close" id="generateClose">✕</button>
+    </div>
+    <div id="generateBody"></div>
+  </div>
+</div>
+
+<script>
+/* ---------------- Conexión a Supabase ---------------- */
+const SUPABASE_URL = 'https://hbkrrzkcpzkyqgihqmdk.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_UbpD-XAq_F4W_M6IqJbBmQ_N1wSyvGC';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const CATEGORIAS = [
+  { value:'tributario', label:'Tributario' },
+  { value:'control_interno', label:'Control Interno' },
+  { value:'legal', label:'Legal' },
+  { value:'contable', label:'Contable' },
+  { value:'ajustes_reclasificaciones', label:'Ajustes y Reclasificaciones' },
+  { value:'sgsst', label:'Salud en el trabajo (SG-SST)' },
+];
+function catLabel(value){
+  const c = CATEGORIAS.find(c=>c.value===value);
+  return c ? c.label : '';
+}
+function normalizeCategoria(raw){
+  if(!raw) return '';
+  const v = String(raw).toLowerCase().trim();
+  const found = CATEGORIAS.find(c => c.value===v || c.label.toLowerCase()===v || v.includes(c.value.split('_')[0]));
+  return found ? found.value : '';
+}
+function populateCategorySelect(sel, current){
+  sel.innerHTML = '<option value="">Sin categoría</option>' +
+    CATEGORIAS.map(c=>`<option value="${c.value}" ${current===c.value?'selected':''}>${c.label}</option>`).join('');
+}
+
+let selectedCategories = new Set();
+
+let entries = [];
+let editingId = null;
+let hasPassword = false;
+
+function showToast(msg){
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 2400);
+}
+
+async function sha256(text){
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function init(){
+  try{
+    const { data, error } = await sb.from('app_settings').select('key,value').in('key',['username','password_hash']);
+    if(error) throw error;
+    const map = {};
+    (data||[]).forEach(r=>map[r.key]=r.value);
+    hasPassword = !!(map.username && map.password_hash);
+  }catch(e){
+    console.error(e);
+    hasPassword = false;
+  }
+  document.getElementById('loading').classList.add('hidden');
+  const gate = document.getElementById('gate');
+  gate.classList.remove('hidden');
+  if(hasPassword){
+    document.getElementById('gateSub').textContent = 'Ingresa el usuario y la contraseña del equipo para consultar el histórico de hallazgos, riesgos, recomendaciones y normatividad.';
+    document.getElementById('gateBtn').textContent = 'Entrar';
+    document.getElementById('gateFoot').textContent = '';
+  } else {
+    document.getElementById('gateSub').textContent = 'Aún no se han definido las credenciales. Crea el usuario y la contraseña que usará todo el equipo para entrar al archivo.';
+    document.getElementById('gateConfirmWrap').classList.remove('hidden');
+    document.getElementById('gateBtn').textContent = 'Crear credenciales y entrar';
+  }
+}
+init();
+
+document.getElementById('gateBtn').addEventListener('click', handleGate);
+document.getElementById('gateUser').addEventListener('keydown', e=>{ if(e.key==='Enter') handleGate(); });
+document.getElementById('gatePass').addEventListener('keydown', e=>{ if(e.key==='Enter') handleGate(); });
+document.getElementById('gatePass2').addEventListener('keydown', e=>{ if(e.key==='Enter') handleGate(); });
+
+async function handleGate(){
+  const errorEl = document.getElementById('gateError');
+  errorEl.textContent = '';
+  const user = document.getElementById('gateUser').value.trim();
+  const pass = document.getElementById('gatePass').value;
+  if(!user){ errorEl.textContent = 'Escribe un usuario.'; return; }
+  if(!pass){ errorEl.textContent = 'Escribe una contraseña.'; return; }
+
+  if(!hasPassword){
+    const pass2 = document.getElementById('gatePass2').value;
+    if(pass.length < 4){ errorEl.textContent = 'Usa al menos 4 caracteres.'; return; }
+    if(pass !== pass2){ errorEl.textContent = 'Las contraseñas no coinciden.'; return; }
+    try{
+      const hash = await sha256(pass);
+      const { error } = await sb.from('app_settings').upsert([
+        { key:'username', value:user },
+        { key:'password_hash', value:hash }
+      ]);
+      if(error) throw error;
+      showToast('Credenciales creadas');
+      enterApp();
+    }catch(e){ console.error(e); errorEl.textContent = 'No se pudieron guardar las credenciales. Intenta de nuevo.'; }
+  } else {
+    try{
+      const { data, error } = await sb.from('app_settings').select('key,value').in('key',['username','password_hash']);
+      if(error) throw error;
+      const map = {};
+      (data||[]).forEach(r=>map[r.key]=r.value);
+      const hash = await sha256(pass);
+      if(map.username && map.username.toLowerCase() === user.toLowerCase() && map.password_hash === hash){
+        enterApp();
+      } else {
+        errorEl.textContent = 'Usuario o contraseña incorrectos.';
+      }
+    }catch(e){ console.error(e); errorEl.textContent = 'Error al verificar. Intenta de nuevo.'; }
+  }
+}
+
+async function enterApp(){
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  await loadEntries();
+}
+
+async function loadEntries(){
+  try{
+    const { data, error } = await sb.from('hallazgos').select('*').order('seq', { ascending:true });
+    if(error) throw error;
+    entries = data || [];
+  }catch(e){
+    console.error(e);
+    entries = [];
+    showToast('No se pudieron cargar los hallazgos. Revisa tu conexión.');
+  }
+  renderCategoryFilters();
+  renderResults();
+}
+
+function fmtDate(d){
+  if(!d) return 'Sin fecha';
+  const parts = d.split('-');
+  if(parts.length!==3) return d;
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return `${parts[2]} ${meses[parseInt(parts[1],10)-1]} ${parts[0]}`;
+}
+
+function codeFor(entry){
+  const year = entry.fecha ? entry.fecha.split('-')[0] : new Date(entry.created_at).getFullYear();
+  return `H-${year}-${String(entry.seq).padStart(4,'0')}`;
+}
+
+function renderCategoryFilters(){
+  const wrap = document.getElementById('categoryFilters');
+  wrap.innerHTML = CATEGORIAS.map(c=>{
+    const count = entries.filter(e=>e.categoria===c.value).length;
+    const checked = selectedCategories.has(c.value) ? 'checked' : '';
+    return `
+      <label class="cat-filter-item">
+        <input type="checkbox" data-cat="${c.value}" ${checked}>
+        <span class="cat-dot tag-cat-${c.value}" style="background:currentColor"></span>
+        ${c.label}
+        <span class="cat-filter-count">${count}</span>
+      </label>
+    `;
+  }).join('');
+  wrap.querySelectorAll('input[data-cat]').forEach(input=>{
+    input.addEventListener('change', ()=>{
+      const val = input.getAttribute('data-cat');
+      if(input.checked) selectedCategories.add(val); else selectedCategories.delete(val);
+      document.getElementById('catResetBtn').classList.toggle('hidden', selectedCategories.size===0);
+      renderResults();
+    });
+  });
+}
+document.getElementById('catResetBtn').addEventListener('click', ()=>{
+  selectedCategories.clear();
+  document.getElementById('catResetBtn').classList.add('hidden');
+  renderCategoryFilters();
+  renderResults();
+});
+
+function renderResults(){
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  let filtered = entries;
+  if(selectedCategories.size){
+    filtered = filtered.filter(e=> selectedCategories.has(e.categoria));
+  }
+  if(q){
+    filtered = filtered.filter(e=>{
+      const blob = [e.titulo,e.informe,e.hallazgo,e.riesgo,e.beneficio,e.recomendacion,e.normatividad,e.nivel,catLabel(e.categoria)].join(' ').toLowerCase();
+      return blob.includes(q);
+    });
+  }
+  filtered = [...filtered].sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
+
+  document.getElementById('heroStats').textContent = `${entries.length} hallazgo${entries.length!==1?'s':''} en el archivo`;
+  document.getElementById('resultsCount').textContent = q
+    ? `${filtered.length} resultado${filtered.length!==1?'s':''} para "${q}"`
+    : (entries.length ? 'Hallazgos más recientes' : '');
+
+  const list = document.getElementById('resultsList');
+  list.innerHTML = '';
+
+  if(filtered.length === 0){
+    const div = document.createElement('div');
+    div.className = 'empty-state';
+    div.innerHTML = entries.length === 0
+      ? `<div class="serif">El archivo está vacío</div><div>Registra el primer hallazgo con el botón "Nuevo hallazgo".</div>`
+      : `<div class="serif">Sin resultados</div><div>No hay hallazgos que coincidan con tu búsqueda o filtro.</div>`;
+    list.appendChild(div);
+    return;
+  }
+
+  filtered.forEach(entry=>{
+    const tabColor = entry.nivel === 'alta' ? 'var(--risk-alta)' : entry.nivel === 'baja' ? 'var(--risk-baja)' : 'var(--risk-media)';
+    const card = document.createElement('div');
+    card.className = 'ficha';
+    card.innerHTML = `
+      <div class="ficha-tab" style="background:${tabColor}"></div>
+      <div class="ficha-inner">
+        <div class="ficha-head">
+          <span class="ficha-code mono">${codeFor(entry)}</span>
+          <div class="ficha-meta">
+            ${entry.categoria ? `<span class="tag-cat tag-cat-${entry.categoria}">${catLabel(entry.categoria)}</span>` : ''}
+            <span class="tag tag-${entry.nivel}">${entry.nivel === 'alta' ? 'Alto' : entry.nivel === 'baja' ? 'Bajo' : 'Medio'}</span>
+            <span>${fmtDate(entry.fecha)}</span>
+          </div>
+        </div>
+        ${entry.titulo ? `<div class="ficha-titulo">${escapeHtml(entry.titulo)}</div>` : ''}
+        <div class="ficha-informe">${escapeHtml(entry.informe) || 'Sin informe asociado'}</div>
+        <div class="ficha-grid">
+          <div>
+            <div class="ficha-field-label">Hallazgo</div>
+            <div class="ficha-field-text">${escapeHtml(entry.hallazgo) || '—'}</div>
+          </div>
+          <div>
+            <div class="ficha-field-label">Riesgo</div>
+            <div class="ficha-field-text">${escapeHtml(entry.riesgo) || '—'}</div>
+          </div>
+          <div>
+            <div class="ficha-field-label">Beneficio</div>
+            <div class="ficha-field-text">${escapeHtml(entry.beneficio) || '—'}</div>
+          </div>
+          <div>
+            <div class="ficha-field-label">Recomendación</div>
+            <div class="ficha-field-text">${escapeHtml(entry.recomendacion) || '—'}</div>
+          </div>
+          <div class="ficha-full">
+            <div class="ficha-field-label">Normatividad</div>
+            <div class="ficha-field-text">${escapeHtml(entry.normatividad) || '—'}</div>
+          </div>
+        </div>
+        <div class="ficha-actions">
+          <button class="btn btn-ghost" data-edit="${entry.id}">Editar</button>
+        </div>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+
+  list.querySelectorAll('[data-edit]').forEach(btn=>{
+    btn.addEventListener('click', ()=> openModal(btn.getAttribute('data-edit')));
+  });
+}
+
+function escapeHtml(str){
+  if(!str) return '';
+  return str.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+document.getElementById('searchInput').addEventListener('input', renderResults);
+
+function openModal(id){
+  editingId = id || null;
+  const entry = editingId ? entries.find(e=>e.id===editingId) : null;
+  document.getElementById('modalTitle').textContent = entry ? 'Editar hallazgo' : 'Nuevo hallazgo';
+  document.getElementById('fTitulo').value = entry ? (entry.titulo||'') : '';
+  document.getElementById('fInforme').value = entry ? entry.informe : '';
+  document.getElementById('fFecha').value = entry ? entry.fecha : '';
+  document.getElementById('fHallazgo').value = entry ? entry.hallazgo : '';
+  document.getElementById('fNivel').value = entry ? entry.nivel : 'media';
+  populateCategorySelect(document.getElementById('fCategoria'), entry ? (entry.categoria||'') : '');
+  document.getElementById('fRiesgo').value = entry ? entry.riesgo : '';
+  document.getElementById('fBeneficio').value = entry ? (entry.beneficio||'') : '';
+  document.getElementById('fRecomendacion').value = entry ? entry.recomendacion : '';
+  document.getElementById('fNormatividad').value = entry ? entry.normatividad : '';
+  document.getElementById('deleteBtn').classList.toggle('hidden', !entry);
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+
+function closeModal(){
+  document.getElementById('modalOverlay').classList.add('hidden');
+  editingId = null;
+}
+
+document.getElementById('newBtn').addEventListener('click', ()=>openModal(null));
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
+
+document.getElementById('saveBtn').addEventListener('click', async ()=>{
+  const informe = document.getElementById('fInforme').value.trim();
+  const hallazgo = document.getElementById('fHallazgo').value.trim();
+  if(!hallazgo){ showToast('Escribe al menos el hallazgo.'); return; }
+
+  const data = {
+    titulo: document.getElementById('fTitulo').value.trim(),
+    informe,
+    fecha: document.getElementById('fFecha').value || null,
+    hallazgo,
+    nivel: document.getElementById('fNivel').value,
+    categoria: document.getElementById('fCategoria').value || null,
+    riesgo: document.getElementById('fRiesgo').value.trim(),
+    beneficio: document.getElementById('fBeneficio').value.trim(),
+    recomendacion: document.getElementById('fRecomendacion').value.trim(),
+    normatividad: document.getElementById('fNormatividad').value.trim(),
+  };
+
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true; saveBtn.textContent = 'Guardando…';
+
+  try{
+    if(editingId){
+      const { error } = await sb.from('hallazgos').update(data).eq('id', editingId);
+      if(error) throw error;
+    } else {
+      const maxSeq = entries.reduce((m,e)=>Math.max(m, e.seq||0), 0);
+      const row = { id: 'e_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), seq: maxSeq+1, ...data };
+      const { error } = await sb.from('hallazgos').insert(row);
+      if(error) throw error;
+    }
+    await loadEntries();
+    closeModal();
+    showToast('Hallazgo guardado');
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo guardar. Intenta de nuevo.');
+  } finally{
+    saveBtn.disabled = false; saveBtn.textContent = 'Guardar hallazgo';
+  }
+});
+
+document.getElementById('deleteBtn').addEventListener('click', async ()=>{
+  if(!editingId) return;
+  if(!confirm('¿Eliminar este hallazgo del archivo? Esta acción no se puede deshacer.')) return;
+  try{
+    const { error } = await sb.from('hallazgos').delete().eq('id', editingId);
+    if(error) throw error;
+    await loadEntries();
+    closeModal();
+    showToast('Hallazgo eliminado');
+  }catch(e){ console.error(e); showToast('No se pudo eliminar. Intenta de nuevo.'); }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('gate').classList.remove('hidden');
+  document.getElementById('gateUser').value = '';
+  document.getElementById('gatePass').value = '';
+  document.getElementById('gateError').textContent = '';
+});
+
+document.getElementById('changePassBtn').addEventListener('click', async ()=>{
+  const currentUser = prompt('Escribe el usuario actual:');
+  if(currentUser === null) return;
+  const current = prompt('Escribe la contraseña actual:');
+  if(current === null) return;
+  try{
+    const { data, error } = await sb.from('app_settings').select('key,value').in('key',['username','password_hash']);
+    if(error) throw error;
+    const map = {};
+    (data||[]).forEach(r=>map[r.key]=r.value);
+    const hash = await sha256(current);
+    if(!map.username || map.username.toLowerCase() !== currentUser.trim().toLowerCase() || map.password_hash !== hash){
+      showToast('Usuario o contraseña actuales incorrectos.'); return;
+    }
+  }catch(e){ console.error(e); showToast('Error al verificar las credenciales.'); return; }
+
+  const nuevoUser = prompt('Escribe el nuevo usuario (deja igual si no lo quieres cambiar):', currentUser.trim());
+  if(nuevoUser === null || !nuevoUser.trim()) return;
+  const nueva = prompt('Escribe la nueva contraseña (mínimo 4 caracteres):');
+  if(!nueva) return;
+  if(nueva.length < 4){ showToast('Usa al menos 4 caracteres.'); return; }
+  const confirmNueva = prompt('Confirma la nueva contraseña:');
+  if(nueva !== confirmNueva){ showToast('Las contraseñas no coinciden.'); return; }
+
+  try{
+    const newHash = await sha256(nueva);
+    const { error } = await sb.from('app_settings').upsert([
+      { key:'username', value:nuevoUser.trim() },
+      { key:'password_hash', value:newHash }
+    ]);
+    if(error) throw error;
+    showToast('Credenciales actualizadas para todo el equipo');
+  }catch(e){ console.error(e); showToast('No se pudieron actualizar las credenciales.'); }
+});
+
+/* ---------------- Importar desde Word ---------------- */
+let reviewItems = [];
+
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  document.getElementById('importOverlay').classList.remove('hidden');
+  renderImportPick();
+});
+document.getElementById('importClose').addEventListener('click', ()=>{
+  document.getElementById('importOverlay').classList.add('hidden');
+});
+
+function renderImportPick(){
+  document.getElementById('importTitle').textContent = 'Importar hallazgos desde un informe';
+  document.getElementById('importBody').innerHTML = `
+    <div class="import-drop" id="dropZone">
+      <div class="serif">Sube tu informe (.docx, .pdf) o un .json</div>
+      <div class="import-drop-sub">La IA leerá el informe y extraerá automáticamente cada hallazgo, riesgo, recomendación y normatividad. Podrás revisar y ajustar todo antes de guardarlo.</div>
+      <input type="file" id="fileInput" accept=".docx,.pdf,.json,application/json" style="display:none">
+    </div>
+  `;
+  const drop = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  drop.addEventListener('click', ()=>fileInput.click());
+  fileInput.addEventListener('change', e=>{
+    if(e.target.files[0]) handleFile(e.target.files[0]);
+  });
+}
+
+function renderImportStatus(text){
+  document.getElementById('importBody').innerHTML = `
+    <div class="import-status">
+      <div class="spinner"></div>
+      <div class="import-status-text">${text}</div>
+    </div>
+  `;
+}
+
+function renderImportError(msg){
+  document.getElementById('importBody').innerHTML = `
+    <div class="import-error">${msg}</div>
+    <div class="modal-actions"><button class="btn btn-ghost" style="flex:1" id="retryBtn">Intentar de nuevo</button></div>
+  `;
+  document.getElementById('retryBtn').addEventListener('click', renderImportPick);
+}
+
+function itemsFromParsed(parsed){
+  const items = Array.isArray(parsed) ? parsed : [];
+  return items.map((it,i)=>({
+    _tmpId: 'r'+i,
+    titulo: it.titulo || '',
+    informe: it.informe || '',
+    fecha: /^\d{4}-\d{2}-\d{2}$/.test(it.fecha) ? it.fecha : '',
+    hallazgo: it.hallazgo || '',
+    nivel: ['alta','media','baja'].includes(it.nivel) ? it.nivel : 'media',
+    categoria: normalizeCategoria(it.categoria),
+    riesgo: it.riesgo || '',
+    beneficio: it.beneficio || '',
+    recomendacion: it.recomendacion || '',
+    normatividad: it.normatividad || '',
+  }));
+}
+
+async function extractTextFromDocx(file){
+  const arrayBuffer = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return result.value;
+}
+
+async function extractTextFromPdf(file){
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  for(let i=1; i<=pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    fullText += content.items.map(it=>it.str).join(' ') + '\n\n';
+  }
+  return fullText;
+}
+
+async function extractHallazgosWithAI(reportText, fileName){
+  const { data, error } = await sb.functions.invoke('extract-hallazgos', {
+    body: { reportText, fileName }
+  });
+  if(error){
+    let detail = error.message || 'Error desconocido';
+    try{
+      const ctx = error.context;
+      if(ctx && typeof ctx.json === 'function'){
+        const body = await ctx.json();
+        if(body && body.error) detail = body.error;
+      }
+    }catch(_e){}
+    throw new Error(detail);
+  }
+  if(data && data.error) throw new Error(data.error);
+  return (data && data.items) || [];
+}
+
+async function handleFile(file){
+  const lower = file.name.toLowerCase();
+  try{
+    if(lower.endsWith('.json')){
+      renderImportStatus('Leyendo el archivo…');
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      reviewItems = itemsFromParsed(parsed);
+      if(!reviewItems.length){
+        renderImportError('El archivo no contiene hallazgos (debe ser un array JSON). Verifica el archivo e inténtalo de nuevo.');
+        return;
+      }
+      renderReview();
+      return;
+    }
+
+    if(lower.endsWith('.docx') || lower.endsWith('.pdf')){
+      renderImportStatus('Leyendo el documento…');
+      const reportText = lower.endsWith('.docx')
+        ? await extractTextFromDocx(file)
+        : await extractTextFromPdf(file);
+
+      if(!reportText || !reportText.trim()){
+        renderImportError('No se pudo extraer texto de ese archivo. Si es un PDF escaneado (imagen), no se puede leer automáticamente.');
+        return;
+      }
+
+      renderImportStatus('La IA está identificando los hallazgos…');
+      const parsed = await extractHallazgosWithAI(reportText, file.name);
+      reviewItems = itemsFromParsed(parsed);
+      if(!reviewItems.length){
+        renderImportError('No se identificaron hallazgos en ese informe. Verifica el documento e inténtalo de nuevo.');
+        return;
+      }
+      renderReview();
+      return;
+    }
+
+    renderImportError('Formato no soportado. Sube un archivo .docx, .pdf o .json.');
+  }catch(e){
+    console.error(e);
+    renderImportError('Ocurrió un problema al procesar el archivo: ' + (e.message || 'intenta de nuevo') + '.');
+  }
+}
+
+function renderReview(){
+  document.getElementById('importTitle').textContent = 'Revisar hallazgos encontrados';
+  const body = document.getElementById('importBody');
+  body.innerHTML = `
+    <div class="review-count">${reviewItems.length} hallazgo${reviewItems.length!==1?'s':''} identificado${reviewItems.length!==1?'s':''} — revisa y ajusta antes de importar</div>
+    <div class="review-list" id="reviewList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="cancelReviewBtn">Cancelar</button>
+      <button class="btn btn-primary" id="confirmImportBtn">Importar ${reviewItems.length} hallazgo${reviewItems.length!==1?'s':''}</button>
+    </div>
+  `;
+  const list = document.getElementById('reviewList');
+  reviewItems.forEach(item=>{
+    const div = document.createElement('div');
+    div.className = 'review-item';
+    div.innerHTML = `
+      <div class="review-item-label">Título</div>
+      <input type="text" data-field="titulo" data-id="${item._tmpId}" value="${escapeAttr(item.titulo)}" placeholder="Título del hallazgo" style="font-weight:600;">
+      <div class="review-item-head">
+        <input type="text" data-field="informe" data-id="${item._tmpId}" value="${escapeAttr(item.informe)}" placeholder="Informe / fuente" style="margin-bottom:0;">
+        <select data-field="nivel" data-id="${item._tmpId}">
+          <option value="alta" ${item.nivel==='alta'?'selected':''}>Alta</option>
+          <option value="media" ${item.nivel==='media'?'selected':''}>Media</option>
+          <option value="baja" ${item.nivel==='baja'?'selected':''}>Baja</option>
+        </select>
+        <button class="review-remove" data-remove="${item._tmpId}">✕</button>
+      </div>
+      <div class="review-item-label">Categoría</div>
+      <select data-field="categoria" data-id="${item._tmpId}" style="margin-bottom:8px;">
+        <option value="">Sin categoría</option>
+        ${CATEGORIAS.map(c=>`<option value="${c.value}" ${item.categoria===c.value?'selected':''}>${c.label}</option>`).join('')}
+      </select>
+      <div class="review-item-label">Hallazgo</div>
+      <textarea data-field="hallazgo" data-id="${item._tmpId}" style="min-height:50px">${escapeHtml(item.hallazgo)}</textarea>
+      <div class="review-item-label">Riesgo</div>
+      <input type="text" data-field="riesgo" data-id="${item._tmpId}" value="${escapeAttr(item.riesgo)}">
+      <div class="review-item-label">Beneficio</div>
+      <input type="text" data-field="beneficio" data-id="${item._tmpId}" value="${escapeAttr(item.beneficio)}">
+      <div class="review-item-label">Recomendación</div>
+      <textarea data-field="recomendacion" data-id="${item._tmpId}" style="min-height:50px">${escapeHtml(item.recomendacion)}</textarea>
+      <div class="review-item-label">Normatividad</div>
+      <textarea data-field="normatividad" data-id="${item._tmpId}" style="min-height:60px">${escapeHtml(item.normatividad)}</textarea>
+    `;
+    list.appendChild(div);
+  });
+
+  list.querySelectorAll('[data-field]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const id = el.getAttribute('data-id');
+      const field = el.getAttribute('data-field');
+      const item = reviewItems.find(r=>r._tmpId===id);
+      if(item) item[field] = el.value;
+    });
+  });
+  list.querySelectorAll('[data-remove]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      reviewItems = reviewItems.filter(r=>r._tmpId !== btn.getAttribute('data-remove'));
+      renderReview();
+    });
+  });
+  document.getElementById('cancelReviewBtn').addEventListener('click', ()=>{
+    document.getElementById('importOverlay').classList.add('hidden');
+  });
+  document.getElementById('confirmImportBtn').addEventListener('click', confirmImport);
+}
+
+function escapeAttr(str){ return escapeHtml(str).replace(/"/g,'&quot;'); }
+
+async function confirmImport(){
+  const btn = document.getElementById('confirmImportBtn');
+  btn.disabled = true; btn.textContent = 'Importando…';
+  try{
+    let maxSeq = entries.reduce((m,e)=>Math.max(m, e.seq||0), 0);
+    const rows = reviewItems.map(item=>{
+      maxSeq += 1;
+      return {
+        id: 'e_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+        seq: maxSeq,
+        titulo: item.titulo,
+        informe: item.informe,
+        fecha: item.fecha || null,
+        hallazgo,
+        nivel: item.nivel,
+        categoria: item.categoria || null,
+        riesgo: item.riesgo,
+        beneficio: item.beneficio,
+        recomendacion: item.recomendacion,
+        normatividad: item.normatividad,
+      };
+    });
+    const { error } = await sb.from('hallazgos').insert(rows);
+    if(error) throw error;
+    await loadEntries();
+    document.getElementById('importOverlay').classList.add('hidden');
+    showToast(`${reviewItems.length} hallazgo(s) importado(s) al archivo`);
+    reviewItems = [];
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo completar la importación. Intenta de nuevo.');
+    btn.disabled = false; btn.textContent = 'Reintentar importación';
+  }
+}
+
+/* ---------------- Generar informe ---------------- */
+let selectedForReport = new Set();
+
+document.getElementById('generateBtn').addEventListener('click', ()=>{
+  selectedForReport = new Set();
+  document.getElementById('generateOverlay').classList.remove('hidden');
+  renderGeneratePicker();
+});
+document.getElementById('generateClose').addEventListener('click', ()=>{
+  document.getElementById('generateOverlay').classList.add('hidden');
+});
+
+function renderGeneratePicker(){
+  const body = document.getElementById('generateBody');
+  body.innerHTML = `
+    <input type="text" id="genSearch" class="gen-search" placeholder="Buscar por código, título, informe o hallazgo…">
+    <div class="gen-count" id="genCount"></div>
+    <div class="gen-list" id="genList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="genCancelBtn">Cancelar</button>
+      <button class="btn btn-primary" id="genConfirmBtn" disabled>Generar documento</button>
+    </div>
+  `;
+  document.getElementById('genSearch').addEventListener('input', renderGenList);
+  document.getElementById('genCancelBtn').addEventListener('click', ()=>{
+    document.getElementById('generateOverlay').classList.add('hidden');
+  });
+  document.getElementById('genConfirmBtn').addEventListener('click', generateReportDoc);
+  renderGenList();
+}
+
+function renderGenList(){
+  const q = (document.getElementById('genSearch').value || '').trim().toLowerCase();
+  let list = [...entries].sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
+  if(q){
+    list = list.filter(e=>{
+      const blob = [codeFor(e), e.titulo, e.informe, e.hallazgo, catLabel(e.categoria)].join(' ').toLowerCase();
+      return blob.includes(q);
+    });
+  }
+  const listEl = document.getElementById('genList');
+  document.getElementById('genCount').textContent = `${selectedForReport.size} hallazgo${selectedForReport.size!==1?'s':''} seleccionado${selectedForReport.size!==1?'s':''}`;
+  listEl.innerHTML = list.map(e=>`
+    <label class="gen-row">
+      <input type="checkbox" data-gen-id="${e.id}" ${selectedForReport.has(e.id)?'checked':''}>
+      <div>
+        <div class="gen-row-code">${codeFor(e)}</div>
+        <div class="gen-row-title">${escapeHtml(e.titulo) || escapeHtml(e.hallazgo).slice(0,80) || 'Sin título'}</div>
+        <div class="gen-row-sub">${escapeHtml(e.informe) || 'Sin informe'} · ${fmtDate(e.fecha)}</div>
+      </div>
+    </label>
+  `).join('') || '<div class="empty-state"><div class="serif">Sin resultados</div></div>';
+
+  listEl.querySelectorAll('[data-gen-id]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const id = cb.getAttribute('data-gen-id');
+      if(cb.checked) selectedForReport.add(id); else selectedForReport.delete(id);
+      document.getElementById('genCount').textContent = `${selectedForReport.size} hallazgo${selectedForReport.size!==1?'s':''} seleccionado${selectedForReport.size!==1?'s':''}`;
+      document.getElementById('genConfirmBtn').disabled = selectedForReport.size===0;
+    });
+  });
+  document.getElementById('genConfirmBtn').disabled = selectedForReport.size===0;
+}
+
+async function generateReportDoc(){
+  const btn = document.getElementById('genConfirmBtn');
+  btn.disabled = true; btn.textContent = 'Generando…';
+  try{
+    if(typeof docx === 'undefined' || !docx.Document){
+      throw new Error('La librería para generar Word no cargó. Revisa tu conexión y vuelve a intentar.');
+    }
+    if(typeof saveAs === 'undefined'){
+      throw new Error('La librería para descargar el archivo no cargó. Revisa tu conexión y vuelve a intentar.');
+    }
+    const chosen = entries.filter(e=>selectedForReport.has(e.id))
+      .sort((a,b)=> (a.seq||0)-(b.seq||0));
+
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, ShadingType, PageBreak, TableOfContents, HeadingLevel, Header, PageNumber } = docx;
+
+    const FONT = 'Calibri Light';
+    const SIZE = 20; // 10pt (docx usa medios-puntos)
+    function run(text, opts={}){ return new TextRun({ text: text==null ? '' : String(text), font:FONT, size:SIZE, ...opts }); }
+    function labelRun(text){ return run(text, { bold:true }); }
+    function bodyRun(text){ return run(text || '—'); }
+
+    const BLANK_LINE = '_'.repeat(28);
+
+    const introParagraphs = [
+      new Paragraph({ alignment: AlignmentType.RIGHT, children:[ run(`Bogotá D.C., ${BLANK_LINE}`) ], spacing:{after:300} }),
+      new Paragraph({ children:[ run('Señores:') ], spacing:{after:60} }),
+      new Paragraph({ children:[ run(BLANK_LINE, {bold:true}) ], spacing:{after:60} }),
+      new Paragraph({ children:[ run(`NIT: ${BLANK_LINE}`) ], spacing:{after:60} }),
+      new Paragraph({ children:[ run(`Atn. ${BLANK_LINE} – Representante legal principal`) ] }),
+      new Paragraph({ children:[ run(`       ${BLANK_LINE} – Representante legal suplente`) ] }),
+      new Paragraph({ children:[ run(`       ${BLANK_LINE} – Contador(a)`) ], spacing:{after:60} }),
+      new Paragraph({ children:[ run('Ciudad') ], spacing:{after:300} }),
+      new Paragraph({ alignment: AlignmentType.CENTER, children:[ run(`Asunto: ${BLANK_LINE}`, {bold:true}) ], spacing:{after:300} }),
+      new Paragraph({ children:[ run(`Para nuestra firma es un gusto presentar el informe de recomendaciones derivado de la auditoría practicada con corte al ${BLANK_LINE}. Esta auditoría tuvo como objetivo evaluar el sistema de control interno, verificar el cumplimiento normativo y examinar la razonabilidad de las cifras presentadas por la entidad.`) ], spacing:{after:200} }),
+      new Paragraph({ children:[ run('Como resultado del trabajo realizado, se exponen a continuación las recomendaciones pertinentes, las cuales fueron previamente comentadas con la administración. Estas observaciones buscan contribuir al fortalecimiento de los procesos y al mejoramiento continuo de las actividades desarrolladas por la entidad.') ], spacing:{after:300} }),
+    ];
+
+    const closingParagraphs = [
+      new Paragraph({ children:[ run('Agradecemos la colaboración brindada por los colaboradores de la entidad, la cual fue fundamental para el adecuado desarrollo de nuestro trabajo y el cumplimiento de los objetivos de la auditoría.') ], spacing:{after:200} }),
+      new Paragraph({ children:[ run('Quedamos atentos a cualquier comentario o aclaración que se requiera respecto al contenido del presente informe, los cuales atenderemos con gusto en el momento que se considere oportuno.') ], spacing:{after:200} }),
+      new Paragraph({ children:[ new PageBreak() ] }),
+    ];
+
+    const noBorder = { style: BorderStyle.SINGLE, size: 4, color: 'C9C7BD' };
+    const cellBorders = { top:noBorder, bottom:noBorder, left:noBorder, right:noBorder };
+
+    const children = [
+      ...introParagraphs,
+      new TableOfContents('Índice', { hyperlink:true, headingStyleRange:'2-2' }),
+      ...closingParagraphs,
+    ];
+
+    chosen.forEach((entry, idx)=>{
+      const cleanTitulo = (entry.titulo||'').replace(/^\d+(\.\d+)*\.?\s*/,'').trim() || 'Sin título';
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        children:[ run(`1.${idx+1}  ${cleanTitulo}`) ],
+        spacing:{ before:100, after:120 }
+      }));
+      children.push(new Table({
+        width:{ size:100, type:WidthType.PERCENTAGE },
+        rows:[
+          new TableRow({ children:[
+            new TableCell({ width:{size:38,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Hallazgo / Recomendación')] }) ] }),
+            new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Riesgo / Beneficio')] }) ] }),
+            new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Normatividad')] }) ] }),
+          ]}),
+          new TableRow({ children:[
+            new TableCell({ borders:cellBorders, children:[
+              new Paragraph({ children:[bodyRun(entry.hallazgo)], spacing:{after:150} }),
+              new Paragraph({ children:[ labelRun('Recomendación: '), bodyRun(entry.recomendacion) ] }),
+            ]}),
+            new TableCell({ borders:cellBorders, children:[
+              new Paragraph({ children:[ labelRun('Riesgo: '), bodyRun(entry.riesgo) ], spacing:{after:150} }),
+              new Paragraph({ children:[ labelRun('Beneficio: '), bodyRun(entry.beneficio) ] }),
+            ]}),
+            new TableCell({ borders:cellBorders, children:[ new Paragraph({ children:[bodyRun(entry.normatividad)] }) ] }),
+          ]}),
+        ]
+      }));
+      children.push(new Paragraph({ text:'', spacing:{after:300} }));
+    });
+
+    const doc = new Document({
+      styles:{
+        default:{ document:{ run:{ font:FONT, size:SIZE } } },
+        paragraphStyles:[
+          { id:'Heading1', name:'Heading 1', basedOn:'Normal', next:'Normal', quickFormat:true,
+            run:{ font:FONT, size:SIZE, bold:true }, paragraph:{ spacing:{ before:200, after:150 } } },
+          { id:'Heading2', name:'Heading 2', basedOn:'Normal', next:'Normal', quickFormat:true,
+            run:{ font:FONT, size:SIZE, bold:true }, paragraph:{ spacing:{ before:150, after:100 } } },
+        ]
+      },
+      sections:[{
+        headers:{
+          default: new Header({
+            children:[ new Paragraph({
+              alignment: AlignmentType.RIGHT,
+              children:[ new TextRun({ children:[PageNumber.CURRENT], font:FONT, size:SIZE }) ]
+            }) ]
+          })
+        },
+        children
+      }]
+    });
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `consolidado_hallazgos_${new Date().toISOString().slice(0,10)}.docx`);
+    document.getElementById('generateOverlay').classList.add('hidden');
+    showToast('Documento generado');
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo generar el documento: ' + (e.message || 'error desconocido'));
+  }finally{
+    btn.disabled = false; btn.textContent = 'Generar documento';
+  }
+}
+</script>
+</body>
+</html>
