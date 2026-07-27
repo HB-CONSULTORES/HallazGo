@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+[source: 1]<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -1052,7 +1052,8 @@ function escapeAttr(str){ return escapeHtml(str).replace(/"/g,'&quot;'); }
 
 async function confirmImport(){
   const btn = document.getElementById('confirmImportBtn');
-  btn.disabled = true; btn.textContent = 'Importando…';
+  btn.disabled = true; 
+  btn.textContent = 'Importando…';
   try{
     let maxSeq = entries.reduce((m,e)=>Math.max(m, e.seq||0), 0);
     const rows = reviewItems.map(item=>{
@@ -1063,7 +1064,7 @@ async function confirmImport(){
         titulo: item.titulo,
         informe: item.informe,
         fecha: item.fecha || null,
-        hallazgo,
+        hallazgo: item.hallazgo,
         nivel: item.nivel,
         categoria: item.categoria || null,
         riesgo: item.riesgo,
@@ -1081,7 +1082,8 @@ async function confirmImport(){
   }catch(e){
     console.error(e);
     showToast('No se pudo completar la importación. Intenta de nuevo.');
-    btn.disabled = false; btn.textContent = 'Reintentar importación';
+    btn.disabled = false; 
+    btn.textContent = 'Reintentar importación';
   }
 }
 
