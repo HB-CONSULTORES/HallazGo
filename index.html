@@ -133,7 +133,23 @@ textarea{ resize:vertical; min-height:70px; line-height:1.5; }
 .hero-stats{ margin-top:14px; font-size:12.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; }
 
 .content{ flex: 1; max-width:980px; margin:0 auto; padding:10px 32px 40px; } /* Ajuste padding inferior */
-.results-count{ font-size:12.5px; color:var(--ink-soft); margin-bottom:16px; font-family:'IBM Plex Mono',monospace; }
+.results-count{ font-size:12.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; }
+.results-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.sort-field{ display:flex; align-items:center; gap:8px; }
+.sort-field label{ font-size:11.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-soft); font-weight:500; white-space:nowrap; }
+.sort-select{ width:auto; padding:8px 12px; font-size:12.5px; }
+
+.pagination{ display:flex; justify-content:center; align-items:center; gap:6px; margin-top:28px; flex-wrap:wrap; }
+.page-btn{
+  min-width:32px; height:32px; padding:0 8px; border:1px solid var(--line); background:#fff;
+  border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--ink-soft);
+  cursor:pointer; transition:border-color .15s ease, color .15s ease, background .15s ease;
+}
+.page-btn:hover:not(:disabled){ border-color:var(--ink-soft); color:var(--ink); }
+.page-btn.active{ background:var(--ink); color:#fff; border-color:var(--ink); cursor:default; }
+.page-btn:disabled{ opacity:0.35; cursor:default; }
+.page-ellipsis{ color:var(--ink-soft); padding:0 4px; font-family:'IBM Plex Mono',monospace; font-size:12.5px; }
+@media(max-width:520px){ .results-toolbar{ flex-direction:column; align-items:stretch; } .sort-field{ justify-content:space-between; } }
 
 .layout{ display:flex; max-width:1180px; margin:0 auto; gap:30px; padding:0 32px 40px; align-items:flex-start; flex: 1; } /* Ajuste padding e inserción flex */
 .layout .content{ max-width:none; margin:0; padding:0; flex:1; min-width:0; }
@@ -343,8 +359,22 @@ textarea{ resize:vertical; min-height:70px; line-height:1.5; }
       <button class="cat-filter-reset hidden" id="catResetBtn">Quitar filtros</button>
     </aside>
     <div class="content">
-      <div class="results-count" id="resultsCount"></div>
+      <div class="results-toolbar">
+        <div class="results-count" id="resultsCount"></div>
+        <div class="sort-field">
+          <label for="sortSelect">Ordenar por</label>
+          <select id="sortSelect" class="sort-select">
+            <option value="fecha_desc">Más recientes primero</option>
+            <option value="fecha_asc">Más antiguos primero</option>
+            <option value="titulo_asc">Título A-Z</option>
+            <option value="titulo_desc">Título Z-A</option>
+            <option value="riesgo_desc">Riesgo: alto a bajo</option>
+            <option value="riesgo_asc">Riesgo: bajo a alto</option>
+          </select>
+        </div>
+      </div>
       <div id="resultsList"></div>
+      <div class="pagination" id="pagination"></div>
     </div>
   </div>
 
@@ -476,6 +506,75 @@ let selectedCategories = new Set();
 let entries = [];
 let editingId = null;
 let hasPassword = false;
+
+/* ---------------- Búsqueda, orden y paginado ---------------- */
+const PAGE_SIZE = 20;
+let currentPage = 1;
+let currentSort = 'fecha_desc';
+
+function normalizeText(str){
+  return (str==null ? '' : String(str))
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // quita tildes/diacríticos
+    .toLowerCase();
+}
+
+function sortEntries(list){
+  const sorted = [...list];
+  const risk_desc = { alta:0, media:1, baja:2 };
+  const risk_asc = { baja:0, media:1, alta:2 };
+  switch(currentSort){
+    case 'fecha_asc':
+      sorted.sort((a,b)=> (a.fecha||'').localeCompare(b.fecha||'')); break;
+    case 'titulo_asc':
+      sorted.sort((a,b)=> normalizeText(a.titulo||a.hallazgo).localeCompare(normalizeText(b.titulo||b.hallazgo))); break;
+    case 'titulo_desc':
+      sorted.sort((a,b)=> normalizeText(b.titulo||b.hallazgo).localeCompare(normalizeText(a.titulo||a.hallazgo))); break;
+    case 'riesgo_desc':
+      sorted.sort((a,b)=> (risk_desc[a.nivel] ?? 3) - (risk_desc[b.nivel] ?? 3)); break;
+    case 'riesgo_asc':
+      sorted.sort((a,b)=> (risk_asc[a.nivel] ?? 3) - (risk_asc[b.nivel] ?? 3)); break;
+    case 'fecha_desc':
+    default:
+      sorted.sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||'')); break;
+  }
+  return sorted;
+}
+
+function renderPagination(totalItems){
+  const pager = document.getElementById('pagination');
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  if(currentPage > totalPages) currentPage = totalPages;
+  if(totalPages <= 1){ pager.innerHTML = ''; return; }
+
+  let pages = [];
+  if(totalPages <= 7){
+    for(let i=1;i<=totalPages;i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if(currentPage > 3) pages.push('…');
+    for(let i=Math.max(2,currentPage-1); i<=Math.min(totalPages-1,currentPage+1); i++) pages.push(i);
+    if(currentPage < totalPages-2) pages.push('…');
+    pages.push(totalPages);
+  }
+
+  pager.innerHTML = `
+    <button class="page-btn" id="pagePrev" ${currentPage===1?'disabled':''} aria-label="Página anterior">‹</button>
+    ${pages.map(p=> p==='…'
+      ? `<span class="page-ellipsis">…</span>`
+      : `<button class="page-btn ${p===currentPage?'active':''}" data-page="${p}">${p}</button>`
+    ).join('')}
+    <button class="page-btn" id="pageNext" ${currentPage===totalPages?'disabled':''} aria-label="Página siguiente">›</button>
+  `;
+
+  const goTo = p=>{ currentPage = p; renderResults(); document.querySelector('.content')?.scrollIntoView({behavior:'smooth', block:'start'}); };
+  pager.querySelectorAll('[data-page]').forEach(btn=>{
+    btn.addEventListener('click', ()=> goTo(parseInt(btn.getAttribute('data-page'),10)));
+  });
+  const prevBtn = document.getElementById('pagePrev');
+  const nextBtn = document.getElementById('pageNext');
+  if(prevBtn) prevBtn.addEventListener('click', ()=>{ if(currentPage>1) goTo(currentPage-1); });
+  if(nextBtn) nextBtn.addEventListener('click', ()=>{ if(currentPage<totalPages) goTo(currentPage+1); });
+}
 
 function showToast(msg){
   const t = document.createElement('div');
@@ -611,6 +710,7 @@ function renderCategoryFilters(){
       const val = input.getAttribute('data-cat');
       if(input.checked) selectedCategories.add(val); else selectedCategories.delete(val);
       document.getElementById('catResetBtn').classList.toggle('hidden', selectedCategories.size===0);
+      currentPage = 1;
       renderResults();
     });
   });
@@ -618,43 +718,63 @@ function renderCategoryFilters(){
 document.getElementById('catResetBtn').addEventListener('click', ()=>{
   selectedCategories.clear();
   document.getElementById('catResetBtn').classList.add('hidden');
+  currentPage = 1;
   renderCategoryFilters();
   renderResults();
 });
 
 function renderResults(){
-  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const qRaw = document.getElementById('searchInput').value.trim();
+  const tokens = normalizeText(qRaw).split(/\s+/).filter(Boolean);
   let filtered = entries;
   if(selectedCategories.size){
     filtered = filtered.filter(e=> selectedCategories.has(e.categoria));
   }
-  if(q){
+  if(tokens.length){
     filtered = filtered.filter(e=>{
-      const blob = [e.titulo,e.informe,e.hallazgo,e.riesgo,e.beneficio,e.recomendacion,e.normatividad,e.nivel,catLabel(e.categoria)].join(' ').toLowerCase();
-      return blob.includes(q);
+      const blob = normalizeText([e.titulo,e.informe,e.hallazgo,e.riesgo,e.beneficio,e.recomendacion,e.normatividad,e.nivel,catLabel(e.categoria)].join(' '));
+      // cada palabra escrita debe aparecer en algún campo (orden y tildes no importan)
+      return tokens.every(t=> blob.includes(t));
     });
   }
-  filtered = [...filtered].sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
+
+  const totalFiltered = filtered.length;
+  filtered = sortEntries(filtered);
 
   document.getElementById('heroStats').textContent = `${entries.length} hallazgo${entries.length!==1?'s':''} en el archivo`;
-  document.getElementById('resultsCount').textContent = q
-    ? `${filtered.length} resultado${filtered.length!==1?'s':''} para "${q}"`
-    : (entries.length ? 'Hallazgos más recientes' : '');
+
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+  if(currentPage > totalPages) currentPage = totalPages;
+  const startIdx = (currentPage-1) * PAGE_SIZE;
+  const pageItems = filtered.slice(startIdx, startIdx + PAGE_SIZE);
+
+  if(totalFiltered === 0){
+    document.getElementById('resultsCount').textContent = qRaw
+      ? `0 resultados para "${qRaw}"`
+      : (entries.length ? 'Hallazgos más recientes' : '');
+  } else {
+    const from = startIdx + 1;
+    const to = Math.min(startIdx + PAGE_SIZE, totalFiltered);
+    document.getElementById('resultsCount').textContent = qRaw
+      ? `Mostrando ${from}–${to} de ${totalFiltered} resultado${totalFiltered!==1?'s':''} para "${qRaw}"`
+      : `Mostrando ${from}–${to} de ${totalFiltered} hallazgo${totalFiltered!==1?'s':''}`;
+  }
 
   const list = document.getElementById('resultsList');
   list.innerHTML = '';
 
-  if(filtered.length === 0){
+  if(totalFiltered === 0){
     const div = document.createElement('div');
     div.className = 'empty-state';
     div.innerHTML = entries.length === 0
       ? `<div class="serif">El archivo está vacío</div><div>Registra el primer hallazgo con el botón "Nuevo hallazgo".</div>`
       : `<div class="serif">Sin resultados</div><div>No hay hallazgos que coincidan con tu búsqueda o filtro.</div>`;
     list.appendChild(div);
+    renderPagination(0);
     return;
   }
 
-  filtered.forEach(entry=>{
+  pageItems.forEach(entry=>{
     const tabColor = entry.nivel === 'alta' ? 'var(--risk-alta)' : entry.nivel === 'baja' ? 'var(--risk-baja)' : 'var(--risk-media)';
     const card = document.createElement('div');
     card.className = 'ficha';
@@ -704,6 +824,8 @@ function renderResults(){
   list.querySelectorAll('[data-edit]').forEach(btn=>{
     btn.addEventListener('click', ()=> openModal(btn.getAttribute('data-edit')));
   });
+
+  renderPagination(totalFiltered);
 }
 
 function escapeHtml(str){
@@ -711,7 +833,8 @@ function escapeHtml(str){
   return str.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
-document.getElementById('searchInput').addEventListener('input', renderResults);
+document.getElementById('searchInput').addEventListener('input', ()=>{ currentPage = 1; renderResults(); });
+document.getElementById('sortSelect').addEventListener('change', e=>{ currentSort = e.target.value; currentPage = 1; renderResults(); });
 
 function openModal(id){
   editingId = id || null;
