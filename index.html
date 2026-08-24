@@ -336,8 +336,7 @@ textarea{ resize:vertical; min-height:70px; line-height:1.5; }
       <div class="brand-name">Biblioteca de <span>Hallazgos</span></div>
     </div>
     <div class="top-actions">
-      <button class="btn btn-ghost" id="generateBtn">Generar informe</button>
-      <button class="btn btn-ghost" id="pptxBtn">Generar presentación (PPTX)</button>
+      <button class="btn btn-ghost" id="pptxBtn">Generar informe</button>
       <button class="btn btn-ghost" id="importBtn">Subir datos de un informe</button>
       <button class="btn btn-ghost" id="changePassBtn">Cambiar usuario/contraseña</button>
       <button class="btn btn-ghost" id="logoutBtn">Cerrar sesión</button>
@@ -464,22 +463,11 @@ textarea{ resize:vertical; min-height:70px; line-height:1.5; }
   </div>
 </div>
 
-<!-- MODAL: generar informe -->
-<div id="generateOverlay" class="overlay hidden">
-  <div class="modal" style="max-width:680px;">
-    <div class="modal-head">
-      <div class="modal-title">Generar informe con hallazgos seleccionados</div>
-      <button class="modal-close" id="generateClose">✕</button>
-    </div>
-    <div id="generateBody"></div>
-  </div>
-</div>
-
-<!-- MODAL: generar presentación PPTX desde planilla -->
+<!-- MODAL: generar informe desde planilla (Word o presentación) -->
 <div id="pptxOverlay" class="overlay hidden">
   <div class="modal" style="max-width:720px;">
     <div class="modal-head">
-      <div class="modal-title" id="pptxTitle">Generar presentación desde planilla</div>
+      <div class="modal-title" id="pptxTitle">Generar informe desde planilla</div>
       <button class="modal-close" id="pptxClose">✕</button>
     </div>
     <div id="pptxBody"></div>
@@ -1224,188 +1212,7 @@ async function confirmImport(){
   }
 }
 
-/* ---------------- Generar informe ---------------- */
-let selectedForReport = new Set();
-
-document.getElementById('generateBtn').addEventListener('click', ()=>{
-  selectedForReport = new Set();
-  document.getElementById('generateOverlay').classList.remove('hidden');
-  renderGeneratePicker();
-});
-document.getElementById('generateClose').addEventListener('click', ()=>{
-  document.getElementById('generateOverlay').classList.add('hidden');
-});
-
-function renderGeneratePicker(){
-  const body = document.getElementById('generateBody');
-  body.innerHTML = `
-    <input type="text" id="genSearch" class="gen-search" placeholder="Buscar por código, título, informe o hallazgo…">
-    <div class="gen-count" id="genCount"></div>
-    <div class="gen-list" id="genList"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="genCancelBtn">Cancelar</button>
-      <button class="btn btn-primary" id="genConfirmBtn" disabled>Generar documento</button>
-    </div>
-  `;
-  document.getElementById('genSearch').addEventListener('input', renderGenList);
-  document.getElementById('genCancelBtn').addEventListener('click', ()=>{
-    document.getElementById('generateOverlay').classList.add('hidden');
-  });
-  document.getElementById('genConfirmBtn').addEventListener('click', generateReportDoc);
-  renderGenList();
-}
-
-function renderGenList(){
-  const q = (document.getElementById('genSearch').value || '').trim().toLowerCase();
-  let list = [...entries].sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
-  if(q){
-    list = list.filter(e=>{
-      const blob = [codeFor(e), e.titulo, e.informe, e.hallazgo, catLabel(e.categoria)].join(' ').toLowerCase();
-      return blob.includes(q);
-    });
-  }
-  const listEl = document.getElementById('genList');
-  document.getElementById('genCount').textContent = `${selectedForReport.size} hallazgo${selectedForReport.size!==1?'s':''} seleccionado${selectedForReport.size!==1?'s':''}`;
-  listEl.innerHTML = list.map(e=>`
-    <label class="gen-row">
-      <input type="checkbox" data-gen-id="${e.id}" ${selectedForReport.has(e.id)?'checked':''}>
-      <div>
-        <div class="gen-row-code">${codeFor(e)}</div>
-        <div class="gen-row-title">${escapeHtml(e.titulo) || escapeHtml(e.hallazgo).slice(0,80) || 'Sin título'}</div>
-        <div class="gen-row-sub">${escapeHtml(e.informe) || 'Sin informe'} · ${fmtDate(e.fecha)}</div>
-      </div>
-    </label>
-  `).join('') || '<div class="empty-state"><div class="serif">Sin resultados</div></div>';
-
-  listEl.querySelectorAll('[data-gen-id]').forEach(cb=>{
-    cb.addEventListener('change', ()=>{
-      const id = cb.getAttribute('data-gen-id');
-      if(cb.checked) selectedForReport.add(id); else selectedForReport.delete(id);
-      document.getElementById('genCount').textContent = `${selectedForReport.size} hallazgo${selectedForReport.size!==1?'s':''} seleccionado${selectedForReport.size!==1?'s':''}`;
-      document.getElementById('genConfirmBtn').disabled = selectedForReport.size===0;
-    });
-  });
-  document.getElementById('genConfirmBtn').disabled = selectedForReport.size===0;
-}
-
-async function generateReportDoc(){
-  const btn = document.getElementById('genConfirmBtn');
-  btn.disabled = true; btn.textContent = 'Generando…';
-  try{
-    if(typeof docx === 'undefined' || !docx.Document){
-      throw new Error('La librería para generar Word no cargó. Revisa tu conexión y vuelve a intentar.');
-    }
-    if(typeof saveAs === 'undefined'){
-      throw new Error('La librería para descargar el archivo no cargó. Revisa tu conexión y vuelve a intentar.');
-    }
-    const chosen = entries.filter(e=>selectedForReport.has(e.id))
-      .sort((a,b)=> (a.seq||0)-(b.seq||0));
-
-    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, ShadingType, PageBreak, TableOfContents, HeadingLevel, Header, PageNumber } = docx;
-
-    const FONT = 'Calibri Light';
-    const SIZE = 20; // 10pt (docx usa medios-puntos)
-    function run(text, opts={}){ return new TextRun({ text: text==null ? '' : String(text), font:FONT, size:SIZE, ...opts }); }
-    function labelRun(text){ return run(text, { bold:true }); }
-    function bodyRun(text){ return run(text || '—'); }
-
-    const BLANK_LINE = '_'.repeat(28);
-
-    const introParagraphs = [
-      new Paragraph({ alignment: AlignmentType.RIGHT, children:[ run(`Bogotá D.C., ${BLANK_LINE}`) ], spacing:{after:300} }),
-      new Paragraph({ children:[ run('Señores:') ], spacing:{after:60} }),
-      new Paragraph({ children:[ run(BLANK_LINE, {bold:true}) ], spacing:{after:60} }),
-      new Paragraph({ children:[ run(`NIT: ${BLANK_LINE}`) ], spacing:{after:60} }),
-      new Paragraph({ children:[ run(`Atn. ${BLANK_LINE} – Representante legal principal`) ] }),
-      new Paragraph({ children:[ run(`       ${BLANK_LINE} – Representante legal suplente`) ] }),
-      new Paragraph({ children:[ run(`       ${BLANK_LINE} – Contador(a)`) ], spacing:{after:60} }),
-      new Paragraph({ children:[ run('Ciudad') ], spacing:{after:300} }),
-      new Paragraph({ alignment: AlignmentType.CENTER, children:[ run(`Asunto: ${BLANK_LINE}`, {bold:true}) ], spacing:{after:300} }),
-      new Paragraph({ children:[ run(`Para nuestra firma es un gusto presentar el informe de recomendaciones derivado de la auditoría practicada con corte al ${BLANK_LINE}. Esta auditoría tuvo como objetivo evaluar el sistema de control interno, verificar el cumplimiento normativo y examinar la razonabilidad de las cifras presentadas por la entidad.`) ], spacing:{after:200} }),
-      new Paragraph({ children:[ run('Como resultado del trabajo realizado, se exponen a continuación las recomendaciones pertinentes, las cuales fueron previamente comentadas con la administración. Estas observaciones buscan contribuir al fortalecimiento de los procesos y al mejoramiento continuo de las actividades desarrolladas por la entidad.') ], spacing:{after:300} }),
-    ];
-
-    const closingParagraphs = [
-      new Paragraph({ children:[ run('Agradecemos la colaboración brindada por los colaboradores de la entidad, la cual fue fundamental para el adecuado desarrollo de nuestro trabajo y el cumplimiento de los objetivos de la auditoría.') ], spacing:{after:200} }),
-      new Paragraph({ children:[ run('Quedamos atentos a cualquier comentario o aclaración que se requiera respecto al contenido del presente informe, los cuales atenderemos con gusto en el momento que se considere oportuno.') ], spacing:{after:200} }),
-      new Paragraph({ children:[ new PageBreak() ] }),
-    ];
-
-    const noBorder = { style: BorderStyle.SINGLE, size: 4, color: 'C9C7BD' };
-    const cellBorders = { top:noBorder, bottom:noBorder, left:noBorder, right:noBorder };
-
-    const children = [
-      ...introParagraphs,
-      new TableOfContents('Índice', { hyperlink:true, headingStyleRange:'2-2' }),
-      ...closingParagraphs,
-    ];
-
-    chosen.forEach((entry, idx)=>{
-      const cleanTitulo = (entry.titulo||'').replace(/^\d+(\.\d+)*\.?\s*/,'').trim() || 'Sin título';
-      children.push(new Paragraph({
-        heading: HeadingLevel.HEADING_2,
-        children:[ run(`1.${idx+1}  ${cleanTitulo}`) ],
-        spacing:{ before:100, after:120 }
-      }));
-      children.push(new Table({
-        width:{ size:100, type:WidthType.PERCENTAGE },
-        rows:[
-          new TableRow({ children:[
-            new TableCell({ width:{size:38,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Hallazgo / Recomendación')] }) ] }),
-            new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Riesgo / Beneficio')] }) ] }),
-            new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Normatividad')] }) ] }),
-          ]}),
-          new TableRow({ children:[
-            new TableCell({ borders:cellBorders, children:[
-              new Paragraph({ children:[bodyRun(entry.hallazgo)], spacing:{after:150} }),
-              new Paragraph({ children:[ labelRun('Recomendación: '), bodyRun(entry.recomendacion) ] }),
-            ]}),
-            new TableCell({ borders:cellBorders, children:[
-              new Paragraph({ children:[ labelRun('Riesgo: '), bodyRun(entry.riesgo) ], spacing:{after:150} }),
-              new Paragraph({ children:[ labelRun('Beneficio: '), bodyRun(entry.beneficio) ] }),
-            ]}),
-            new TableCell({ borders:cellBorders, children:[ new Paragraph({ children:[bodyRun(entry.normatividad)] }) ] }),
-          ]}),
-        ]
-      }));
-      children.push(new Paragraph({ text:'', spacing:{after:300} }));
-    });
-
-    const doc = new Document({
-      styles:{
-        default:{ document:{ run:{ font:FONT, size:SIZE } } },
-        paragraphStyles:[
-          { id:'Heading1', name:'Heading 1', basedOn:'Normal', next:'Normal', quickFormat:true,
-            run:{ font:FONT, size:SIZE, bold:true }, paragraph:{ spacing:{ before:200, after:150 } } },
-          { id:'Heading2', name:'Heading 2', basedOn:'Normal', next:'Normal', quickFormat:true,
-            run:{ font:FONT, size:SIZE, bold:true }, paragraph:{ spacing:{ before:150, after:100 } } },
-        ]
-      },
-      sections:[{
-        headers:{
-          default: new Header({
-            children:[ new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children:[ new TextRun({ children:[PageNumber.CURRENT], font:FONT, size:SIZE }) ]
-            }) ]
-          })
-        },
-        children
-      }]
-    });
-    const blob = await Packer.toBlob(doc);
-    saveAs(blob, `consolidado_hallazgos_${new Date().toISOString().slice(0,10)}.docx`);
-    document.getElementById('generateOverlay').classList.add('hidden');
-    showToast('Documento generado');
-  }catch(e){
-    console.error(e);
-    showToast('No se pudo generar el documento: ' + (e.message || 'error desconocido'));
-  }finally{
-    btn.disabled = false; btn.textContent = 'Generar documento';
-  }
-}
-
-/* ---------------- Generar presentación (PPTX) desde planilla ---------------- */
+/* ---------------- Generar informe (Word o presentación) desde planilla ---------------- */
 let pptxItems = [];
 
 document.getElementById('pptxBtn').addEventListener('click', ()=>{
@@ -1418,11 +1225,11 @@ document.getElementById('pptxClose').addEventListener('click', ()=>{
 });
 
 function renderPptxPick(){
-  document.getElementById('pptxTitle').textContent = 'Generar presentación desde planilla';
+  document.getElementById('pptxTitle').textContent = 'Generar informe desde planilla';
   document.getElementById('pptxBody').innerHTML = `
     <div class="import-drop" id="pptxDropZone">
       <div class="serif">Sube la planilla de hallazgos (.xlsx / .xls)</div>
-      <div class="import-drop-sub">Debe tener columnas como "Item", "Descripción" (o "Hallazgo"), "Riesgo", "Recomendación", "Normatividad" y "Nivel de Riesgo" — como la planilla de control interno. La presentación se generará ordenada por número de punto, no por nivel de riesgo.</div>
+      <div class="import-drop-sub">Debe tener columnas como "Item", "Descripción" (o "Hallazgo"), "Riesgo", "Recomendación", "Normatividad" y "Nivel de Riesgo" — como la planilla de control interno. Luego podrás elegir si el informe se genera como documento Word (tradicional) o como presentación en diapositivas, siempre ordenado por número de punto.</div>
       <input type="file" id="pptxFileInput" accept=".xlsx,.xls" style="display:none">
     </div>
   `;
@@ -1597,9 +1404,20 @@ async function handlePptxFile(file){
 }
 
 function renderPptxDetails(){
-  document.getElementById('pptxTitle').textContent = 'Revisar y generar presentación';
+  document.getElementById('pptxTitle').textContent = 'Revisar y generar informe';
   const body = document.getElementById('pptxBody');
   body.innerHTML = `
+    <div class="field">
+      <label>Formato del informe</label>
+      <div style="display:flex; gap:20px; margin-top:2px;">
+        <label style="display:flex; align-items:center; gap:7px; font-size:13.5px; font-weight:500; cursor:pointer;">
+          <input type="radio" name="pptxFormat" value="word" checked> Documento Word (tradicional)
+        </label>
+        <label style="display:flex; align-items:center; gap:7px; font-size:13.5px; font-weight:500; cursor:pointer;">
+          <input type="radio" name="pptxFormat" value="pptx"> Presentación (diapositivas)
+        </label>
+      </div>
+    </div>
     <div class="row2">
       <div class="field"><label>Nombre del cliente / entidad</label><input type="text" id="pptxCliente" placeholder="Ej: Fundación United Way"></div>
       <div class="field"><label>Corte de auditoría</label><input type="text" id="pptxCorte" placeholder="Ej: 31 de julio de 2026"></div>
@@ -1609,14 +1427,20 @@ function renderPptxDetails(){
     <div class="gen-list" id="pptxList"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="pptxCancelBtn">Cancelar</button>
-      <button class="btn btn-primary" id="pptxConfirmBtn">Generar presentación</button>
+      <button class="btn btn-primary" id="pptxConfirmBtn">Generar informe</button>
     </div>
   `;
   renderPptxList();
   document.getElementById('pptxCancelBtn').addEventListener('click', ()=>{
     document.getElementById('pptxOverlay').classList.add('hidden');
   });
-  document.getElementById('pptxConfirmBtn').addEventListener('click', generatePptxReport);
+  document.getElementById('pptxConfirmBtn').addEventListener('click', generateFromPlanilla);
+  body.querySelectorAll('input[name="pptxFormat"]').forEach(r=>{
+    r.addEventListener('change', ()=>{
+      const fmt = body.querySelector('input[name="pptxFormat"]:checked').value;
+      document.getElementById('pptxConfirmBtn').textContent = fmt==='word' ? 'Generar documento Word' : 'Generar presentación';
+    });
+  });
 }
 
 function renderPptxList(){
@@ -1641,24 +1465,145 @@ function renderPptxList(){
   });
 }
 
-async function generatePptxReport(){
+async function generateFromPlanilla(){
   const btn = document.getElementById('pptxConfirmBtn');
+  const fmt = (document.querySelector('input[name="pptxFormat"]:checked') || {}).value || 'word';
   btn.disabled = true; btn.textContent = 'Generando…';
   try{
-    if(typeof PptxGenJS === 'undefined'){
-      throw new Error('La librería para generar PowerPoint no cargó. Revisa tu conexión y vuelve a intentar.');
-    }
     const chosen = pptxItems.filter(i=>i.include).sort((a,b)=> a.itemNum - b.itemNum);
     if(!chosen.length){
-      throw new Error('Selecciona al menos un hallazgo para generar la presentación.');
+      throw new Error('Selecciona al menos un hallazgo para generar el informe.');
     }
-
     const meta = {
       cliente: document.getElementById('pptxCliente').value.trim() || 'Nombre del cliente',
       corte: document.getElementById('pptxCorte').value.trim(),
       preparadoPor: document.getElementById('pptxPreparadoPor').value.trim() || 'Auditoría',
     };
 
+    if(fmt === 'word'){
+      await generateWordFromPlanilla(chosen, meta);
+    } else {
+      await generatePptxSlides(chosen, meta);
+    }
+
+    document.getElementById('pptxOverlay').classList.add('hidden');
+    showToast(fmt==='word' ? 'Documento generado' : 'Presentación generada');
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo generar el informe: ' + (e.message || 'error desconocido'));
+  }finally{
+    btn.disabled = false; btn.textContent = fmt==='word' ? 'Generar documento Word' : 'Generar presentación';
+  }
+}
+
+/* ---------- Word tradicional, a partir de los hallazgos de la planilla ---------- */
+async function generateWordFromPlanilla(chosen, meta){
+  if(typeof docx === 'undefined' || !docx.Document){
+    throw new Error('La librería para generar Word no cargó. Revisa tu conexión y vuelve a intentar.');
+  }
+  if(typeof saveAs === 'undefined'){
+    throw new Error('La librería para descargar el archivo no cargó. Revisa tu conexión y vuelve a intentar.');
+  }
+
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, ShadingType, PageBreak, TableOfContents, HeadingLevel, Header, PageNumber } = docx;
+
+  const FONT = 'Calibri Light';
+  const SIZE = 20; // 10pt (docx usa medios-puntos)
+  function run(text, opts={}){ return new TextRun({ text: text==null ? '' : String(text), font:FONT, size:SIZE, ...opts }); }
+  function labelRun(text){ return run(text, { bold:true }); }
+  function bodyRun(text){ return run(text || '—'); }
+
+  const BLANK_LINE = '_'.repeat(28);
+
+  const introParagraphs = [
+    new Paragraph({ alignment: AlignmentType.RIGHT, children:[ run(`Bogotá D.C., ${meta.corte || BLANK_LINE}`) ], spacing:{after:300} }),
+    new Paragraph({ children:[ run('Señores:') ], spacing:{after:60} }),
+    new Paragraph({ children:[ run(meta.cliente && meta.cliente!=='Nombre del cliente' ? meta.cliente : BLANK_LINE, {bold:true}) ], spacing:{after:60} }),
+    new Paragraph({ children:[ run(`NIT: ${BLANK_LINE}`) ], spacing:{after:60} }),
+    new Paragraph({ children:[ run(`Atn. ${BLANK_LINE} – Representante legal principal`) ] }),
+    new Paragraph({ children:[ run(`       ${BLANK_LINE} – Representante legal suplente`) ] }),
+    new Paragraph({ children:[ run(`       ${BLANK_LINE} – Contador(a)`) ], spacing:{after:60} }),
+    new Paragraph({ children:[ run('Ciudad') ], spacing:{after:300} }),
+    new Paragraph({ alignment: AlignmentType.CENTER, children:[ run(`Asunto: ${BLANK_LINE}`, {bold:true}) ], spacing:{after:300} }),
+    new Paragraph({ children:[ run(`Para nuestra firma es un gusto presentar el informe de recomendaciones derivado de la auditoría practicada con corte al ${meta.corte || BLANK_LINE}. Esta auditoría tuvo como objetivo evaluar el sistema de control interno, verificar el cumplimiento normativo y examinar la razonabilidad de las cifras presentadas por la entidad.`) ], spacing:{after:200} }),
+    new Paragraph({ children:[ run('Como resultado del trabajo realizado, se exponen a continuación las recomendaciones pertinentes, las cuales fueron previamente comentadas con la administración. Estas observaciones buscan contribuir al fortalecimiento de los procesos y al mejoramiento continuo de las actividades desarrolladas por la entidad.') ], spacing:{after:300} }),
+  ];
+
+  const closingParagraphs = [
+    new Paragraph({ children:[ run('Agradecemos la colaboración brindada por los colaboradores de la entidad, la cual fue fundamental para el adecuado desarrollo de nuestro trabajo y el cumplimiento de los objetivos de la auditoría.') ], spacing:{after:200} }),
+    new Paragraph({ children:[ run('Quedamos atentos a cualquier comentario o aclaración que se requiera respecto al contenido del presente informe, los cuales atenderemos con gusto en el momento que se considere oportuno.') ], spacing:{after:200} }),
+    new Paragraph({ children:[ new PageBreak() ] }),
+  ];
+
+  const noBorder = { style: BorderStyle.SINGLE, size: 4, color: 'C9C7BD' };
+  const cellBorders = { top:noBorder, bottom:noBorder, left:noBorder, right:noBorder };
+
+  const children = [
+    ...introParagraphs,
+    new TableOfContents('Índice', { hyperlink:true, headingStyleRange:'2-2' }),
+    ...closingParagraphs,
+  ];
+
+  chosen.forEach(item=>{
+    const cleanTitulo = (item.titulo||'').trim() || summarizeText(item.hallazgo, 70);
+    children.push(new Paragraph({
+      heading: HeadingLevel.HEADING_2,
+      children:[ run(`${item.itemLabel}  ${cleanTitulo}`) ],
+      spacing:{ before:100, after:120 }
+    }));
+    children.push(new Table({
+      width:{ size:100, type:WidthType.PERCENTAGE },
+      rows:[
+        new TableRow({ children:[
+          new TableCell({ width:{size:38,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Hallazgo / Recomendación')] }) ] }),
+          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Riesgo')] }) ] }),
+          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Normatividad')] }) ] }),
+        ]}),
+        new TableRow({ children:[
+          new TableCell({ borders:cellBorders, children:[
+            new Paragraph({ children:[bodyRun(item.hallazgo)], spacing:{after:150} }),
+            new Paragraph({ children:[ labelRun('Recomendación: '), bodyRun(item.recomendacion) ] }),
+          ]}),
+          new TableCell({ borders:cellBorders, children:[ new Paragraph({ children:[bodyRun(item.riesgo)] }) ] }),
+          new TableCell({ borders:cellBorders, children:[ new Paragraph({ children:[bodyRun(item.normatividad)] }) ] }),
+        ]}),
+      ]
+    }));
+    children.push(new Paragraph({ text:'', spacing:{after:300} }));
+  });
+
+  const doc = new Document({
+    styles:{
+      default:{ document:{ run:{ font:FONT, size:SIZE } } },
+      paragraphStyles:[
+        { id:'Heading1', name:'Heading 1', basedOn:'Normal', next:'Normal', quickFormat:true,
+          run:{ font:FONT, size:SIZE, bold:true }, paragraph:{ spacing:{ before:200, after:150 } } },
+        { id:'Heading2', name:'Heading 2', basedOn:'Normal', next:'Normal', quickFormat:true,
+          run:{ font:FONT, size:SIZE, bold:true }, paragraph:{ spacing:{ before:150, after:100 } } },
+      ]
+    },
+    sections:[{
+      headers:{
+        default: new Header({
+          children:[ new Paragraph({
+            alignment: AlignmentType.RIGHT,
+            children:[ new TextRun({ children:[PageNumber.CURRENT], font:FONT, size:SIZE }) ]
+          }) ]
+        })
+      },
+      children
+    }]
+  });
+  const blob = await Packer.toBlob(doc);
+  saveAs(blob, `consolidado_hallazgos_${new Date().toISOString().slice(0,10)}.docx`);
+}
+
+/* ---------- Presentación en diapositivas, a partir de los hallazgos de la planilla ---------- */
+async function generatePptxSlides(chosen, meta){
+  if(typeof PptxGenJS === 'undefined'){
+    throw new Error('La librería para generar PowerPoint no cargó. Revisa tu conexión y vuelve a intentar.');
+  }
+  {
     // Paleta corporativa elegante: marino profundo + dorado como acento,
     // grises cálidos neutros y un semáforo de riesgo discreto (no colores "de alerta" chillones).
     const C = {
@@ -1824,14 +1769,6 @@ async function generatePptxReport(){
 
     const fileName = `presentacion_hallazgos_${new Date().toISOString().slice(0,10)}.pptx`;
     await pptx.writeFile({ fileName });
-
-    document.getElementById('pptxOverlay').classList.add('hidden');
-    showToast('Presentación generada');
-  }catch(e){
-    console.error(e);
-    showToast('No se pudo generar la presentación: ' + (e.message || 'error desconocido'));
-  }finally{
-    btn.disabled = false; btn.textContent = 'Generar presentación';
   }
 }
 </script>
