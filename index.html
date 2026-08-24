@@ -8,6 +8,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://unpkg.com/docx"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -335,6 +337,7 @@ textarea{ resize:vertical; min-height:70px; line-height:1.5; }
     </div>
     <div class="top-actions">
       <button class="btn btn-ghost" id="generateBtn">Generar informe</button>
+      <button class="btn btn-ghost" id="pptxBtn">Generar presentación (PPTX)</button>
       <button class="btn btn-ghost" id="importBtn">Subir datos de un informe</button>
       <button class="btn btn-ghost" id="changePassBtn">Cambiar usuario/contraseña</button>
       <button class="btn btn-ghost" id="logoutBtn">Cerrar sesión</button>
@@ -469,6 +472,17 @@ textarea{ resize:vertical; min-height:70px; line-height:1.5; }
       <button class="modal-close" id="generateClose">✕</button>
     </div>
     <div id="generateBody"></div>
+  </div>
+</div>
+
+<!-- MODAL: generar presentación PPTX desde planilla -->
+<div id="pptxOverlay" class="overlay hidden">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-head">
+      <div class="modal-title" id="pptxTitle">Generar presentación desde planilla</div>
+      <button class="modal-close" id="pptxClose">✕</button>
+    </div>
+    <div id="pptxBody"></div>
   </div>
 </div>
 
@@ -1390,8 +1404,336 @@ async function generateReportDoc(){
     btn.disabled = false; btn.textContent = 'Generar documento';
   }
 }
+
+/* ---------------- Generar presentación (PPTX) desde planilla ---------------- */
+let pptxItems = [];
+
+document.getElementById('pptxBtn').addEventListener('click', ()=>{
+  pptxItems = [];
+  document.getElementById('pptxOverlay').classList.remove('hidden');
+  renderPptxPick();
+});
+document.getElementById('pptxClose').addEventListener('click', ()=>{
+  document.getElementById('pptxOverlay').classList.add('hidden');
+});
+
+function renderPptxPick(){
+  document.getElementById('pptxTitle').textContent = 'Generar presentación desde planilla';
+  document.getElementById('pptxBody').innerHTML = `
+    <div class="import-drop" id="pptxDropZone">
+      <div class="serif">Sube la planilla de hallazgos (.xlsx / .xls)</div>
+      <div class="import-drop-sub">Debe tener columnas como "Item", "Descripción" (o "Hallazgo"), "Riesgo", "Recomendación", "Normatividad" y "Nivel de Riesgo" — como la planilla de control interno. La presentación se generará ordenada por número de punto, no por nivel de riesgo.</div>
+      <input type="file" id="pptxFileInput" accept=".xlsx,.xls" style="display:none">
+    </div>
+  `;
+  const drop = document.getElementById('pptxDropZone');
+  const fileInput = document.getElementById('pptxFileInput');
+  drop.addEventListener('click', ()=>fileInput.click());
+  fileInput.addEventListener('change', e=>{
+    if(e.target.files[0]) handlePptxFile(e.target.files[0]);
+  });
+}
+
+function renderPptxStatus(text){
+  document.getElementById('pptxBody').innerHTML = `
+    <div class="import-status">
+      <div class="spinner"></div>
+      <div class="import-status-text">${text}</div>
+    </div>
+  `;
+}
+
+function renderPptxError(msg){
+  document.getElementById('pptxBody').innerHTML = `
+    <div class="import-error">${msg}</div>
+    <div class="modal-actions"><button class="btn btn-ghost" style="flex:1" id="pptxRetryBtn">Intentar de nuevo</button></div>
+  `;
+  document.getElementById('pptxRetryBtn').addEventListener('click', renderPptxPick);
+}
+
+function normalizeNivelRiesgo(raw){
+  const v = String(raw||'').toLowerCase();
+  if(v.includes('alt') || v.includes('crit')) return 'alta';
+  if(v.includes('baj')) return 'baja';
+  return 'media';
+}
+
+// Separa un texto tipo "TÍTULO EN MAYÚSCULAS: resto de la descripción…" en título + cuerpo.
+function splitTituloCuerpo(text){
+  const clean = String(text||'').trim();
+  const idx = clean.indexOf(':');
+  if(idx > 6 && idx < 140){
+    const before = clean.slice(0, idx).trim();
+    const letters = before.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g, '');
+    const upperLetters = letters.replace(/[^A-ZÁÉÍÓÚÑ]/g, '');
+    const upperRatio = letters.length ? (upperLetters.length / letters.length) : 0;
+    if(before.length >= 8 && upperRatio > 0.6){
+      return { titulo: before, cuerpo: clean.slice(idx+1).trim() };
+    }
+  }
+  return { titulo: '', cuerpo: clean };
+}
+
+async function parsePlanillaXlsx(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type:'array' });
+
+  let match = null;
+  for(const sheetName of wb.SheetNames){
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+    for(let r=0; r<Math.min(rows.length, 15); r++){
+      const rowVals = (rows[r]||[]).map(v=>String(v||'').trim().toLowerCase());
+      const hasItem = rowVals.some(v=> v==='item');
+      const hasDesc = rowVals.some(v=> v.includes('descripcion') || v.includes('descripción') || v==='hallazgo');
+      const hasRiesgo = rowVals.some(v=> v==='riesgo');
+      if(hasItem && (hasDesc || hasRiesgo)){
+        match = { rows, headerRowIdx:r };
+        break;
+      }
+    }
+    if(match) break;
+  }
+  if(!match){
+    throw new Error('No se encontró una hoja con columnas "Item" y "Descripción"/"Riesgo". Verifica que subiste la planilla correcta.');
+  }
+
+  const header = (match.rows[match.headerRowIdx]||[]).map(v=>String(v||'').trim().toLowerCase());
+  const idx = {
+    item: header.findIndex(h=> h==='item'),
+    descripcion: header.findIndex(h=> h.includes('descripcion') || h.includes('descripción') || h==='hallazgo'),
+    riesgo: header.findIndex(h=> h==='riesgo'),
+    recomendacion: header.findIndex(h=> h.includes('recomend')),
+    normatividad: header.findIndex(h=> h.includes('normativ')),
+    nivel: header.findIndex(h=> h.includes('nivel')),
+  };
+
+  const items = [];
+  for(let r = match.headerRowIdx+1; r < match.rows.length; r++){
+    const row = match.rows[r] || [];
+    const rawItem = idx.item >= 0 ? row[idx.item] : '';
+    const itemStr = String(rawItem||'').trim();
+    if(!itemStr) continue;
+    const itemNum = parseFloat(itemStr.replace(',', '.').replace(/[^\d.]/g, ''));
+    if(isNaN(itemNum)) continue;
+    const descripcionRaw = idx.descripcion >= 0 ? String(row[idx.descripcion]||'').trim() : '';
+    if(!descripcionRaw) continue;
+    const { titulo, cuerpo } = splitTituloCuerpo(descripcionRaw);
+    items.push({
+      _tmpId: 'p'+r,
+      itemLabel: itemStr.replace(/[-.]+$/, ''),
+      itemNum,
+      titulo,
+      hallazgo: cuerpo,
+      riesgo: idx.riesgo >= 0 ? String(row[idx.riesgo]||'').trim() : '',
+      recomendacion: idx.recomendacion >= 0 ? String(row[idx.recomendacion]||'').trim() : '',
+      normatividad: idx.normatividad >= 0 ? String(row[idx.normatividad]||'').trim() : '',
+      nivel: normalizeNivelRiesgo(idx.nivel >= 0 ? row[idx.nivel] : ''),
+      include: true,
+    });
+  }
+  items.sort((a,b)=> a.itemNum - b.itemNum);
+  return items;
+}
+
+async function handlePptxFile(file){
+  try{
+    renderPptxStatus('Leyendo la planilla…');
+    if(typeof XLSX === 'undefined'){
+      throw new Error('La librería para leer Excel no cargó. Revisa tu conexión y vuelve a intentar.');
+    }
+    const parsed = await parsePlanillaXlsx(file);
+    if(!parsed.length){
+      renderPptxError('No se encontraron hallazgos en la planilla. Verifica que tenga las columnas "Item" y "Descripción" con datos.');
+      return;
+    }
+    pptxItems = parsed;
+    renderPptxDetails();
+  }catch(e){
+    console.error(e);
+    renderPptxError('Ocurrió un problema al leer el archivo: ' + (e.message || 'intenta de nuevo') + '.');
+  }
+}
+
+function renderPptxDetails(){
+  document.getElementById('pptxTitle').textContent = 'Revisar y generar presentación';
+  const body = document.getElementById('pptxBody');
+  body.innerHTML = `
+    <div class="row2">
+      <div class="field"><label>Nombre del cliente / entidad</label><input type="text" id="pptxCliente" placeholder="Ej: Fundación United Way"></div>
+      <div class="field"><label>Corte de auditoría</label><input type="text" id="pptxCorte" placeholder="Ej: 31 de julio de 2026"></div>
+    </div>
+    <div class="field"><label>Preparado por</label><input type="text" id="pptxPreparadoPor" placeholder="Ej: Auditoría Interna"></div>
+    <div class="gen-count" id="pptxCount"></div>
+    <div class="gen-list" id="pptxList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="pptxCancelBtn">Cancelar</button>
+      <button class="btn btn-primary" id="pptxConfirmBtn">Generar presentación</button>
+    </div>
+  `;
+  renderPptxList();
+  document.getElementById('pptxCancelBtn').addEventListener('click', ()=>{
+    document.getElementById('pptxOverlay').classList.add('hidden');
+  });
+  document.getElementById('pptxConfirmBtn').addEventListener('click', generatePptxReport);
+}
+
+function renderPptxList(){
+  const includedCount = pptxItems.filter(i=>i.include).length;
+  document.getElementById('pptxCount').textContent = `${includedCount} de ${pptxItems.length} hallazgo(s) incluido(s) — se generarán en orden de punto (${pptxItems[0].itemLabel} a ${pptxItems[pptxItems.length-1].itemLabel})`;
+  const list = document.getElementById('pptxList');
+  list.innerHTML = pptxItems.map(item=>`
+    <label class="gen-row">
+      <input type="checkbox" data-pptx-id="${item._tmpId}" ${item.include?'checked':''}>
+      <div style="flex:1">
+        <div class="gen-row-code">Punto ${escapeHtml(item.itemLabel)} · <span class="tag tag-${item.nivel}" style="padding:1px 7px;">${item.nivel==='alta'?'Alto':item.nivel==='baja'?'Bajo':'Medio'}</span></div>
+        <div class="gen-row-title">${escapeHtml(item.titulo || item.hallazgo.slice(0,90))}</div>
+      </div>
+    </label>
+  `).join('');
+  list.querySelectorAll('[data-pptx-id]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const item = pptxItems.find(i=>i._tmpId===cb.getAttribute('data-pptx-id'));
+      if(item) item.include = cb.checked;
+      renderPptxList();
+    });
+  });
+}
+
+async function generatePptxReport(){
+  const btn = document.getElementById('pptxConfirmBtn');
+  btn.disabled = true; btn.textContent = 'Generando…';
+  try{
+    if(typeof PptxGenJS === 'undefined'){
+      throw new Error('La librería para generar PowerPoint no cargó. Revisa tu conexión y vuelve a intentar.');
+    }
+    const chosen = pptxItems.filter(i=>i.include).sort((a,b)=> a.itemNum - b.itemNum);
+    if(!chosen.length){
+      throw new Error('Selecciona al menos un hallazgo para generar la presentación.');
+    }
+
+    const meta = {
+      cliente: document.getElementById('pptxCliente').value.trim() || 'Nombre del cliente',
+      corte: document.getElementById('pptxCorte').value.trim(),
+      preparadoPor: document.getElementById('pptxPreparadoPor').value.trim() || 'Auditoría',
+    };
+
+    const C = {
+      ink:'16232F', inkSoft:'5C6873', accent:'3E6F65', accentDark:'2C5049',
+      alta:'A5382F', media:'B9812C', baja:'4C7A5D', line:'E1E0D9', paper:'FFFFFF', bg:'F7F7F3'
+    };
+    function riskColor(n){ return n==='alta'?C.alta : n==='baja'?C.baja : C.media; }
+    function riskLabel(n){ return n==='alta'?'ALTO' : n==='baja'?'BAJO' : 'MEDIO'; }
+
+    const pptx = new PptxGenJS();
+    pptx.defineLayout({ name:'HALLAZGOS_WIDE', width:13.33, height:7.5 });
+    pptx.layout = 'HALLAZGOS_WIDE';
+
+    function addFooter(slide, pageNum){
+      slide.addText(`${meta.cliente}  |  Auditoría  |  Confidencial`, { x:0.4, y:7.1, w:8, h:0.28, fontSize:9, color:C.inkSoft, fontFace:'Arial' });
+      slide.addText(String(pageNum), { x:12.55, y:7.1, w:0.4, h:0.28, fontSize:9, color:C.inkSoft, align:'right', fontFace:'Arial' });
+    }
+
+    // Slide 1: portada
+    let s = pptx.addSlide();
+    s.background = { color: C.paper };
+    s.addText('AUDITORÍA', { x:0.9, y:1.55, w:8, h:0.4, fontSize:14, color:C.accentDark, bold:true, fontFace:'Arial', charSpacing:2 });
+    s.addText('Hallazgos y Recomendaciones', { x:0.9, y:1.98, w:11, h:1.1, fontSize:34, color:C.ink, bold:true, fontFace:'Georgia' });
+    s.addText(meta.cliente, { x:0.9, y:3.35, w:10.5, h:0.5, fontSize:18, color:C.inkSoft, fontFace:'Arial' });
+    s.addShape('line', { x:0.9, y:4.05, w:7.5, h:0, line:{ color:C.line, width:1 } });
+    const infoLines = [
+      meta.corte ? `Corte de auditoría:  ${meta.corte}` : '',
+      `Fecha de presentación:  ${new Date().toLocaleDateString('es-CO',{ day:'numeric', month:'long', year:'numeric' })}`,
+      `Preparado por:  ${meta.preparadoPor}`,
+    ].filter(Boolean).join('\n');
+    s.addText(infoLines, { x:0.9, y:4.25, w:9, h:1.4, fontSize:12, color:C.inkSoft, fontFace:'Arial', lineSpacingMultiple:1.5 });
+
+    // Slide 2: resumen ejecutivo
+    const counts = { alta:0, media:0, baja:0 };
+    chosen.forEach(i=> counts[i.nivel]++ );
+    s = pptx.addSlide(); s.background = { color:C.paper };
+    s.addText('Resumen Ejecutivo', { x:0.7, y:0.35, w:11, h:0.55, fontSize:24, bold:true, color:C.ink, fontFace:'Georgia' });
+    s.addText(`Se identificaron ${chosen.length} hallazgo${chosen.length!==1?'s':''} en la auditoría. A continuación se presentan ordenados por punto, no por nivel de riesgo.`, { x:0.7, y:1.02, w:11.5, h:0.5, fontSize:13, color:C.inkSoft, fontFace:'Arial' });
+    const boxW = 3.6, gap = 0.4;
+    [['alta','ALTO',C.alta], ['media','MEDIO',C.media], ['baja','BAJO',C.baja]].forEach(([key,label,color], i)=>{
+      const x = 0.7 + i*(boxW+gap);
+      s.addShape('roundRect', { x, y:1.85, w:boxW, h:1.7, fill:{color:C.bg}, line:{color:C.line,width:1}, rectRadius:0.06 });
+      s.addText(String(counts[key]), { x, y:1.95, w:boxW, h:0.95, align:'center', fontSize:40, bold:true, color, fontFace:'Georgia' });
+      s.addText(label, { x, y:2.9, w:boxW, h:0.4, align:'center', fontSize:12, bold:true, color:C.inkSoft, fontFace:'Arial', charSpacing:1 });
+    });
+    addFooter(s, 2);
+
+    // Slides de tabla resumen (por punto, en chunks)
+    const CHUNK = 12;
+    const totalSummaryParts = Math.ceil(chosen.length / CHUNK);
+    for(let start=0; start<chosen.length; start += CHUNK){
+      const part = chosen.slice(start, start+CHUNK);
+      const partNum = Math.floor(start/CHUNK) + 1;
+      s = pptx.addSlide(); s.background = { color:C.paper };
+      s.addText('Resumen de Hallazgos por Punto', { x:0.5, y:0.3, w:11, h:0.5, fontSize:22, bold:true, color:C.ink, fontFace:'Georgia' });
+      if(totalSummaryParts > 1){
+        s.addText(`Parte ${partNum} de ${totalSummaryParts}`, { x:0.5, y:0.78, w:8, h:0.3, fontSize:11, color:C.inkSoft, fontFace:'Arial' });
+      }
+      const rows = [[
+        { text:'Punto', options:{ bold:true, color:'FFFFFF', fill:{color:C.ink} } },
+        { text:'Hallazgo', options:{ bold:true, color:'FFFFFF', fill:{color:C.ink} } },
+        { text:'Nivel', options:{ bold:true, color:'FFFFFF', fill:{color:C.ink} } },
+      ]];
+      part.forEach(item=>{
+        rows.push([
+          { text:item.itemLabel, options:{ fontSize:10 } },
+          { text:(item.titulo || item.hallazgo).slice(0,120), options:{ fontSize:10 } },
+          { text:riskLabel(item.nivel), options:{ fontSize:10, bold:true, color:riskColor(item.nivel) } },
+        ]);
+      });
+      s.addTable(rows, { x:0.5, y:1.2, w:12.35, colW:[1.3,9.55,1.5], fontFace:'Arial', border:{type:'solid',color:C.line,pt:0.5}, autoPage:false });
+      addFooter(s, 2 + partNum);
+    }
+
+    // Slides de detalle — una por hallazgo, en orden de punto
+    let pageCounter = 2 + totalSummaryParts;
+    chosen.forEach(item=>{
+      pageCounter++;
+      s = pptx.addSlide(); s.background = { color:C.paper };
+      s.addShape('rect', { x:0.4, y:0.35, w:0.55, h:0.55, fill:{color:C.ink} });
+      s.addText(item.itemLabel, { x:0.4, y:0.35, w:0.55, h:0.55, align:'center', valign:'middle', fontSize:13, bold:true, color:'FFFFFF', fontFace:'Arial' });
+      const headTitle = `Hallazgo ${item.itemLabel}${item.titulo ? '  —  '+item.titulo : ''}`;
+      s.addText(headTitle, { x:1.1, y:0.3, w:9, h:0.6, fontSize:16, bold:true, color:C.ink, fontFace:'Georgia' });
+      const rc = riskColor(item.nivel);
+      s.addShape('roundRect', { x:10.35, y:0.35, w:2.6, h:0.55, fill:{color:rc}, rectRadius:0.08 });
+      s.addText(`RIESGO ${riskLabel(item.nivel)}`, { x:10.35, y:0.35, w:2.6, h:0.55, align:'center', valign:'middle', fontSize:11, bold:true, color:'FFFFFF', fontFace:'Arial' });
+
+      function box(x,y,w,h,label,text){
+        s.addShape('roundRect', { x, y, w, h, fill:{color:C.bg}, line:{color:C.line,width:1}, rectRadius:0.05 });
+        s.addText(label, { x:x+0.2, y:y+0.14, w:w-0.4, h:0.3, fontSize:11, bold:true, color:C.accentDark, fontFace:'Arial' });
+        s.addText(text || '—', { x:x+0.2, y:y+0.48, w:w-0.4, h:h-0.62, fontSize:11, color:C.ink, fontFace:'Arial', valign:'top' });
+      }
+      box(0.4, 1.1, 6.1, 2.4, 'Situación encontrada / Hallazgo', item.hallazgo);
+      box(6.75, 1.1, 6.1, 2.4, 'Riesgo', item.riesgo);
+      box(0.4, 3.7, 6.1, 2.4, 'Recomendación', item.recomendacion);
+      box(6.75, 3.7, 6.1, 2.4, 'Normatividad relacionada', item.normatividad);
+
+      addFooter(s, pageCounter);
+    });
+
+    // Slide final
+    s = pptx.addSlide(); s.background = { color:C.paper };
+    s.addText('Cierre del Informe', { x:0.9, y:2.5, w:10, h:0.6, fontSize:26, bold:true, color:C.ink, fontFace:'Georgia' });
+    s.addText(`Se presentaron ${chosen.length} hallazgo${chosen.length!==1?'s':''}, ordenados por punto de auditoría (${chosen[0].itemLabel} a ${chosen[chosen.length-1].itemLabel}). Quedamos atentos a cualquier comentario o aclaración sobre el contenido de este informe.`, { x:0.9, y:3.2, w:10.5, h:1.1, fontSize:13, color:C.inkSoft, fontFace:'Arial' });
+    addFooter(s, pageCounter+1);
+
+    const fileName = `presentacion_hallazgos_${new Date().toISOString().slice(0,10)}.pptx`;
+    await pptx.writeFile({ fileName });
+
+    document.getElementById('pptxOverlay').classList.add('hidden');
+    showToast('Presentación generada');
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo generar la presentación: ' + (e.message || 'error desconocido'));
+  }finally{
+    btn.disabled = false; btn.textContent = 'Generar presentación';
+  }
+}
 </script>
 </body>
 </html>
-
- 
