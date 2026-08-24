@@ -1525,13 +1525,13 @@ async function generateWordFromPlanilla(chosen, meta){
     new Paragraph({ children:[ run(`       ${BLANK_LINE} – Contador(a)`) ], spacing:{after:60} }),
     new Paragraph({ children:[ run('Ciudad') ], spacing:{after:300} }),
     new Paragraph({ alignment: AlignmentType.CENTER, children:[ run(`Asunto: ${BLANK_LINE}`, {bold:true}) ], spacing:{after:300} }),
-    new Paragraph({ children:[ run(`Para nuestra firma es un gusto presentar el informe de recomendaciones derivado de la auditoría practicada con corte al ${meta.corte || BLANK_LINE}. Esta auditoría tuvo como objetivo evaluar el sistema de control interno, verificar el cumplimiento normativo y examinar la razonabilidad de las cifras presentadas por la entidad.`) ], spacing:{after:200} }),
-    new Paragraph({ children:[ run('Como resultado del trabajo realizado, se exponen a continuación las recomendaciones pertinentes, las cuales fueron previamente comentadas con la administración. Estas observaciones buscan contribuir al fortalecimiento de los procesos y al mejoramiento continuo de las actividades desarrolladas por la entidad.') ], spacing:{after:300} }),
+    new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[ run(`Para nuestra firma es un gusto presentar el informe de recomendaciones derivado de la auditoría practicada con corte al ${meta.corte || BLANK_LINE}. Esta auditoría tuvo como objetivo evaluar el sistema de control interno, verificar el cumplimiento normativo y examinar la razonabilidad de las cifras presentadas por la entidad.`) ], spacing:{after:200} }),
+    new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[ run('Como resultado del trabajo realizado, se exponen a continuación las recomendaciones pertinentes, las cuales fueron previamente comentadas con la administración. Estas observaciones buscan contribuir al fortalecimiento de los procesos y al mejoramiento continuo de las actividades desarrolladas por la entidad.') ], spacing:{after:300} }),
   ];
 
   const closingParagraphs = [
-    new Paragraph({ children:[ run('Agradecemos la colaboración brindada por los colaboradores de la entidad, la cual fue fundamental para el adecuado desarrollo de nuestro trabajo y el cumplimiento de los objetivos de la auditoría.') ], spacing:{after:200} }),
-    new Paragraph({ children:[ run('Quedamos atentos a cualquier comentario o aclaración que se requiera respecto al contenido del presente informe, los cuales atenderemos con gusto en el momento que se considere oportuno.') ], spacing:{after:200} }),
+    new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[ run('Agradecemos la colaboración brindada por los colaboradores de la entidad, la cual fue fundamental para el adecuado desarrollo de nuestro trabajo y el cumplimiento de los objetivos de la auditoría.') ], spacing:{after:200} }),
+    new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[ run('Quedamos atentos a cualquier comentario o aclaración que se requiera respecto al contenido del presente informe, los cuales atenderemos con gusto en el momento que se considere oportuno.') ], spacing:{after:200} }),
     new Paragraph({ children:[ new PageBreak() ] }),
   ];
 
@@ -1555,17 +1555,17 @@ async function generateWordFromPlanilla(chosen, meta){
       width:{ size:100, type:WidthType.PERCENTAGE },
       rows:[
         new TableRow({ children:[
-          new TableCell({ width:{size:38,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Hallazgo / Recomendación')] }) ] }),
-          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Riesgo')] }) ] }),
-          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ children:[labelRun('Normatividad')] }) ] }),
+          new TableCell({ width:{size:38,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('Hallazgo / Recomendación')] }) ] }),
+          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('Riesgo')] }) ] }),
+          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('Normatividad')] }) ] }),
         ]}),
         new TableRow({ children:[
           new TableCell({ borders:cellBorders, children:[
-            new Paragraph({ children:[bodyRun(item.hallazgo)], spacing:{after:150} }),
-            new Paragraph({ children:[ labelRun('Recomendación: '), bodyRun(item.recomendacion) ] }),
+            new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[bodyRun(item.hallazgo)], spacing:{after:150} }),
+            new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[ labelRun('Recomendación: '), bodyRun(item.recomendacion) ] }),
           ]}),
-          new TableCell({ borders:cellBorders, children:[ new Paragraph({ children:[bodyRun(item.riesgo)] }) ] }),
-          new TableCell({ borders:cellBorders, children:[ new Paragraph({ children:[bodyRun(item.normatividad)] }) ] }),
+          new TableCell({ borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[bodyRun(item.riesgo)] }) ] }),
+          new TableCell({ borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[bodyRun(item.normatividad)] }) ] }),
         ]}),
       ]
     }));
@@ -1573,6 +1573,7 @@ async function generateWordFromPlanilla(chosen, meta){
   });
 
   const doc = new Document({
+    features:{ updateFields: true },
     styles:{
       default:{ document:{ run:{ font:FONT, size:SIZE } } },
       paragraphStyles:[
