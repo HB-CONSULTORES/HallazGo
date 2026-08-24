@@ -1513,6 +1513,55 @@ async function generateWordFromPlanilla(chosen, meta){
   function labelRun(text){ return run(text, { bold:true }); }
   function bodyRun(text){ return run(text || '—'); }
 
+  // Convierte el texto "crudo" de una celda (hallazgo/riesgo/normatividad, tal como viene
+  // de la planilla, con saltos de línea, líneas de rótulo tipo "Riesgos:" y viñetas "✓ / - / •")
+  // en una lista de párrafos de Word: rótulos en negrita, viñetas como lista, y el resto
+  // como texto justificado.
+  function normalizeCellText(text){
+    return String(text||'').replace(/\\n/g,'\n').replace(/\r\n/g,'\n').trim();
+  }
+  function isBulletLine(line){ return /^[✓•\-\*]\s+/.test(line); }
+  function stripBullet(line){ return line.replace(/^[✓•\-\*]\s+/, '').trim(); }
+  function isLabelLine(line){
+    const t = line.trim();
+    if(!t || t.length > 60) return false;
+    if(/:$/.test(t)) return true;
+    const letters = t.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'');
+    if(letters.length < 4) return false;
+    const upper = letters.replace(/[^A-ZÁÉÍÓÚÑ]/g,'');
+    return upper.length === letters.length;
+  }
+  function cellParagraphs(text){
+    const clean = normalizeCellText(text);
+    if(!clean) return [ new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[bodyRun('')] }) ];
+    const lines = clean.split('\n');
+    const paras = [];
+    lines.forEach(raw=>{
+      const line = raw.trim();
+      if(!line) return;
+      if(isBulletLine(line)){
+        paras.push(new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
+          bullet:{ level:0 },
+          children:[ run(stripBullet(line)) ],
+          spacing:{ after:60 }
+        }));
+      } else if(isLabelLine(line)){
+        paras.push(new Paragraph({
+          children:[ labelRun(line) ],
+          spacing:{ before:100, after:60 }
+        }));
+      } else {
+        paras.push(new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
+          children:[ run(line) ],
+          spacing:{ after:120 }
+        }));
+      }
+    });
+    return paras.length ? paras : [ new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[bodyRun('')] }) ];
+  }
+
   const BLANK_LINE = '_'.repeat(28);
 
   const introParagraphs = [
@@ -1545,27 +1594,33 @@ async function generateWordFromPlanilla(chosen, meta){
   ];
 
   chosen.forEach(item=>{
-    const cleanTitulo = (item.titulo||'').trim() || summarizeText(item.hallazgo, 70);
-    children.push(new Paragraph({
-      heading: HeadingLevel.HEADING_2,
-      children:[ run(`${item.itemLabel}  ${cleanTitulo}`) ],
-      spacing:{ before:100, after:120 }
-    }));
+    const cleanTitulo = ((item.titulo||'').trim() || summarizeText(item.hallazgo, 70)).toUpperCase();
     children.push(new Table({
       width:{ size:100, type:WidthType.PERCENTAGE },
       rows:[
+        // Fila 1: título del punto, en una sola celda que ocupa las 3 columnas
         new TableRow({ children:[
-          new TableCell({ width:{size:38,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('Hallazgo / Recomendación')] }) ] }),
-          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('Riesgo')] }) ] }),
-          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('Normatividad')] }) ] }),
+          new TableCell({
+            columnSpan: 3,
+            borders: cellBorders,
+            children:[ new Paragraph({ heading: HeadingLevel.HEADING_2, children:[ labelRun(`${item.itemLabel}.  ${cleanTitulo}`) ], spacing:{after:0} }) ]
+          }),
         ]}),
+        // Fila 2: encabezados de columna, centrados
+        new TableRow({ children:[
+          new TableCell({ width:{size:38,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('HALLAZGO / RECOMENDACIÓN')] }) ] }),
+          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('RIESGO / BENEFICIO')] }) ] }),
+          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('NORMATIVIDAD')] }) ] }),
+        ]}),
+        // Fila 3: contenido, todo justificado, con rótulos en negrita y viñetas donde aplique
         new TableRow({ children:[
           new TableCell({ borders:cellBorders, children:[
-            new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[bodyRun(item.hallazgo)], spacing:{after:150} }),
-            new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[ labelRun('Recomendación: '), bodyRun(item.recomendacion) ] }),
+            ...cellParagraphs(item.hallazgo),
+            new Paragraph({ children:[ labelRun('Recomendación:') ], spacing:{before:100, after:60} }),
+            ...cellParagraphs(item.recomendacion),
           ]}),
-          new TableCell({ borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[bodyRun(item.riesgo)] }) ] }),
-          new TableCell({ borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.JUSTIFIED, children:[bodyRun(item.normatividad)] }) ] }),
+          new TableCell({ borders:cellBorders, children: cellParagraphs(item.riesgo) }),
+          new TableCell({ borders:cellBorders, children: cellParagraphs(item.normatividad) }),
         ]}),
       ]
     }));
