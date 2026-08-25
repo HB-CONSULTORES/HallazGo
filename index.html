@@ -1345,28 +1345,104 @@ async function parsePlanillaXlsx(file){
 
 // Recorta un texto largo a un resumen corto y elegante para diapositivas,
 // intentando cerrar en una frase completa en vez de cortar a la mitad.
-function summarizeText(text, maxChars){
-  maxChars = maxChars || 190;
-  const clean = String(text||'').replace(/\\n/g,' ').replace(/\s+/g,' ').trim();
-  if(!clean) return '—';
-  const sentenceMatch = clean.match(/^.{20,}?[.!?](?=\s|$)/);
-  let base = sentenceMatch ? sentenceMatch[0] : clean;
-  if(base.length > maxChars){
-    base = base.slice(0, maxChars);
-    const lastSpace = base.lastIndexOf(' ');
-    if(lastSpace > maxChars*0.55) base = base.slice(0, lastSpace);
-    base = base.replace(/[,;:\-–]$/,'').trim() + '…';
+// Frases de apertura típicas de un informe de auditoría que no aportan información
+// para un lector directivo (contexto/antecedentes); se recortan si abren una oración.
+const BOILERPLATE_LEADINS = [
+  /^de acuerdo con[^,]*,\s*/i,
+  /^de conformidad con[^,]*,\s*/i,
+  /^en virtud de[^,]*,\s*/i,
+  /^en cumplimiento de[^,]*,\s*/i,
+  /^durante (la revisión|el proceso|la auditoría|la verificación)[^,]*,\s*/i,
+  /^en el marco de[^,]*,\s*/i,
+  /^conforme a[^,]*,\s*/i,
+  /^teniendo en cuenta[^,]*,\s*/i,
+  /^como resultado de[^,]*,\s*/i,
+  /^en la validación realizada[^,]*,\s*/i,
+  /^en la revisión (realizada|efectuada)[^,]*,\s*/i,
+];
+
+function stripBoilerplate(sentence){
+  let s = String(sentence||'').trim();
+  let changed = true, guard = 0;
+  while(changed && guard < 3){
+    changed = false;
+    for(const re of BOILERPLATE_LEADINS){
+      if(re.test(s)){ s = s.replace(re, ''); changed = true; }
+    }
+    guard++;
   }
-  return base;
+  return s ? (s.charAt(0).toUpperCase() + s.slice(1)) : s;
 }
 
-// Convierte un campo largo (riesgo, recomendación, normatividad) en viñetas de una sola
-// idea completa cada una, partiendo por los marcadores "✓", saltos de línea o frases.
-// Solo recorta si una idea individual es excesivamente larga; el tamaño de letra en la
-// diapositiva se autoajusta (autoFit) para que el texto completo siempre quepa sin cortarse.
+// Expresiones que suelen anticipar la idea central de un hallazgo, riesgo o
+// recomendación (lo que de verdad le importa a la Junta), a diferencia de las
+// oraciones de puro contexto o antecedentes normativos.
+const SIGNAL_PATTERNS = [
+  /sin embargo/i, /no obstante/i, /se identificó/i, /se evidenció/i, /se observ[óa]/i,
+  /se encontr[óa]/i, /se detect[óa]/i, /no cumple/i, /incumple/i, /no se encuentra/i,
+  /no cuenta/i, /carece/i, /riesgo de/i, /podría/i, /puede generar/i, /puede afectar/i,
+  /se recomienda/i, /es necesario/i, /se debe/i, /resulta necesario/i, /se sugiere/i,
+  /no ha sido/i, /no está[n]?/i,
+];
+
+function splitSentences(text){
+  return String(text||'')
+    .replace(/\\n/g, ' ')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ0-9])/)
+    .map(s=>s.trim())
+    .filter(Boolean);
+}
+
+// Resume un texto largo a la idea clave para una audiencia directiva: prioriza
+// la(s) oración(es) que contienen el hallazgo o la conclusión real —no el
+// contexto o los antecedentes normativos—, retira frases de relleno típicas de
+// auditoría y recorta por palabra completa dentro del límite de caracteres.
+// Es una heurística de extracción (no usa IA ni redacta contenido nuevo).
+function summarizeText(text, maxChars){
+  maxChars = maxChars || 220;
+  const sentences = splitSentences(text);
+  if(!sentences.length) return '—';
+  const scored = sentences.map((s, i)=>{
+    let score = 0;
+    if(SIGNAL_PATTERNS.some(re=>re.test(s))) score += 2;
+    if(i>0) score += 1; // la 1a oración suele ser antecedente/contexto
+    if(s.length > 260) score -= 1;
+    return { s, i, score };
+  });
+  scored.sort((a,b)=> b.score - a.score || a.i - b.i);
+
+  let picked = [];
+  let total = 0;
+  for(const item of scored){
+    const clean = stripBoilerplate(item.s);
+    if(!clean) continue;
+    if(total + clean.length > maxChars && picked.length) break;
+    picked.push({ i:item.i, text:clean });
+    total += clean.length;
+    if(total >= maxChars*0.7) break;
+    if(picked.length >= 2) break;
+  }
+  if(!picked.length) picked = [{ i:0, text: stripBoilerplate(sentences[0]) }];
+  picked.sort((a,b)=> a.i - b.i);
+  let out = picked.map(p=>p.text).join(' ');
+  if(out.length > maxChars){
+    const cut = out.slice(0, maxChars);
+    const lastSpace = cut.lastIndexOf(' ');
+    out = (lastSpace > maxChars*0.5 ? cut.slice(0,lastSpace) : cut).trim() + '…';
+  }
+  return out || '—';
+}
+
+// Convierte un campo largo (riesgo, recomendación, normatividad) en viñetas
+// cortas y directas para lectura de Junta Directiva: separa por marcadores
+// "✓", saltos de línea o frases, retira relleno de apertura y limita cada
+// viñeta a una idea. No usa IA: es recorte y limpieza, no redacción nueva.
 function toBullets(text, maxBullets, maxCharsPerBullet){
-  maxBullets = maxBullets || 3;
-  maxCharsPerBullet = maxCharsPerBullet || 260;
+  maxBullets = maxBullets || 2;
+  maxCharsPerBullet = maxCharsPerBullet || 170;
   const clean = String(text||'').replace(/\\n/g,'\n').trim();
   if(!clean) return ['—'];
   let parts;
@@ -1377,7 +1453,16 @@ function toBullets(text, maxBullets, maxCharsPerBullet){
   } else {
     parts = clean.split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ])/);
   }
-  parts = parts.map(p=>p.trim()).filter(Boolean).slice(0, maxBullets).map(p=>{
+  parts = parts.map(p=>p.trim()).filter(Boolean)
+    .map(p=> p.replace(/^(riesgo|beneficio|impacto|hallazgo|recomendaci[oó]n|observaci[oó]n|nota)\s*:\s*/i, '').trim())
+    .map(stripBoilerplate).filter(Boolean);
+  // Si hay más ideas de las que caben, prioriza las que suenan a hallazgo/impacto real.
+  if(parts.length > maxBullets){
+    const scored = parts.map((p,i)=>({ p, i, score: (SIGNAL_PATTERNS.some(re=>re.test(p))?1:0) }));
+    scored.sort((a,b)=> b.score - a.score || a.i - b.i);
+    parts = scored.slice(0, maxBullets).sort((a,b)=>a.i-b.i).map(x=>x.p);
+  }
+  parts = parts.map(p=>{
     if(p.length <= maxCharsPerBullet) return p;
     const cut = p.slice(0, maxCharsPerBullet);
     const lastSpace = cut.lastIndexOf(' ');
@@ -1723,34 +1808,41 @@ async function generatePptxSlides(chosen, meta){
       { x:0.7, y:3.9, w:11.5, h:0.4, fontSize:10.5, italic:true, color:C.inkFaint, fontFace:SANS });
     addFooter(s, 2);
 
-    // ---------- Slide 3: mapa de riesgos (mapa de color) ----------
+    // ---------- Slide 3: mapa de calor de riesgos (matriz) ----------
     s = pptx.addSlide(); s.background = { color:C.paper };
     s.addShape('rect', { x:0, y:0, w:13.33, h:0.08, fill:{ color:C.gold } });
-    s.addText('Mapa de Riesgos', { x:0.7, y:0.4, w:9, h:0.55, fontSize:25, bold:true, color:C.navy, fontFace:SERIF });
-    s.addText('Vista general de todos los puntos de auditoría, coloreados según su nivel de riesgo.',
+    s.addText('Mapa de Calor de Riesgos', { x:0.7, y:0.4, w:9, h:0.55, fontSize:25, bold:true, color:C.navy, fontFace:SERIF });
+    s.addText('Ubicación de cada hallazgo según su nivel de riesgo registrado en la planilla (vista de un solo eje).',
       { x:0.7, y:1.0, w:11.5, h:0.4, fontSize:12.5, color:C.inkSoft, fontFace:SANS });
 
-    const cols = 10;
-    const chipGap = 0.16;
-    const chipW = (12.0 - chipGap*(cols-1)) / cols;
-    const chipH = chipW;
-    const gridX = 0.7, gridY = 1.65;
-    chosen.forEach((item, i)=>{
-      const col = i % cols, row = Math.floor(i/cols);
-      const x = gridX + col*(chipW+chipGap);
-      const y = gridY + row*(chipH+chipGap);
-      const color = riskColor(item.nivel);
-      s.addShape('roundRect', { x, y, w:chipW, h:chipH, fill:{ color }, rectRadius:0.05 });
-      s.addText(item.itemLabel, { x, y, w:chipW, h:chipH, align:'center', valign:'middle', fontSize:12, bold:true, color:'FFFFFF', fontFace:SANS });
+    const heatGridX = 2.55, heatGridY = 1.95, heatCellW = 3.25, heatCellH = 1.42;
+    const rowLevels = ['alta','media','baja'];
+    const colLevels = ['baja','media','alta'];
+    for(let r=0; r<3; r++){
+      for(let c=0; c<3; c++){
+        const x = heatGridX + c*heatCellW;
+        const y = heatGridY + r*heatCellH;
+        const rowLevel = rowLevels[r], colLevel = colLevels[c];
+        const isDiag = rowLevel === colLevel;
+        const fillColor = isDiag ? riskColor(rowLevel) : 'EEF0F2';
+        s.addShape('rect', { x, y, w:heatCellW-0.06, h:heatCellH-0.06, fill:{color:fillColor}, line:{color:'FFFFFF', width:2} });
+        if(isDiag){
+          const pts = chosen.filter(it=>it.nivel===rowLevel).map(it=>it.itemLabel);
+          const label = pts.length ? pts.map(p=>`Pto ${p}`).join('   •   ') : '—';
+          s.addText(label, { x:x+0.1, y:y+0.1, w:heatCellW-0.26, h:heatCellH-0.2, align:'center', valign:'middle', fontSize: pts.length>4?8.5:11, bold:true, color:'FFFFFF', fontFace:SANS });
+        }
+      }
+    }
+    s.addText('SEVERIDAD', { x:0.45, y:heatGridY, w:0.35, h:heatCellH*3-0.06, align:'center', valign:'middle', fontSize:9.5, bold:true, color:C.inkSoft, fontFace:SANS, vert:'vert270', charSpacing:1 });
+    ['ALTA','MEDIA','BAJA'].forEach((lab,r)=>{
+      s.addText(lab, { x:0.9, y:heatGridY+r*heatCellH, w:1.5, h:heatCellH-0.06, align:'right', valign:'middle', fontSize:10.5, bold:true, color:C.inkSoft, fontFace:SANS });
     });
-
-    const legendY = 6.35;
-    [['ALTO',C.alta], ['MEDIO',C.media], ['BAJO',C.baja]].forEach(([label,color], i)=>{
-      const x = 0.7 + i*2.4;
-      s.addShape('roundRect', { x, y:legendY, w:0.32, h:0.32, fill:{color}, rectRadius:0.04 });
-      s.addText(`${label}  ·  ${counts[label.toLowerCase()==='alto'?'alta':label.toLowerCase()==='medio'?'media':'baja']}`,
-        { x:x+0.42, y:legendY-0.03, w:1.9, h:0.38, fontSize:11.5, bold:true, color:C.ink, fontFace:SANS, valign:'middle' });
+    ['BAJO','MEDIO','ALTO'].forEach((lab,c)=>{
+      s.addText(lab, { x:heatGridX+c*heatCellW, y:heatGridY-0.36, w:heatCellW-0.06, h:0.3, align:'center', fontSize:10.5, bold:true, color:C.inkSoft, fontFace:SANS });
     });
+    s.addText('NIVEL DE RIESGO REGISTRADO', { x:heatGridX, y:heatGridY-0.68, w:heatCellW*3, h:0.28, align:'center', fontSize:9.5, bold:true, color:C.inkSoft, fontFace:SANS, charSpacing:1 });
+    s.addText('Nota: matriz simplificada que ubica cada hallazgo según el nivel de riesgo (alto, medio, bajo) registrado en la planilla. No incluye ejes independientes de probabilidad e impacto.',
+      { x:0.7, y:heatGridY+3*heatCellH+0.1, w:11.9, h:0.45, fontSize:9.5, italic:true, color:C.inkFaint, fontFace:SANS });
     addFooter(s, 3);
 
     // ---------- Slides de tabla resumen (por punto, en chunks) ----------
@@ -1807,10 +1899,10 @@ async function generatePptxSlides(chosen, meta){
         s.addText(items.map(t=>({ text:t, options:{ bullet:{ code:'25AA', indent:14 }, breakLine:true, paraSpaceAfter:5 } })),
           { x:x+0.24, y:y+0.5, w:w-0.48, h:h-0.66, fontSize:11, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.08, fit:'shrink', wrap:true });
       }
-      box(0.55, 1.4, 6.05, 2.35, 'Hallazgo (resumen)', [summarizeText(item.hallazgo, 320)], C.navy);
-      box(6.75, 1.4, 5.6, 2.35, 'Riesgo', toBullets(item.riesgo, 3, 260), rc);
-      box(0.55, 3.9, 6.05, 2.35, 'Recomendación', [summarizeText(item.recomendacion, 320)], C.baja);
-      box(6.75, 3.9, 5.6, 2.35, 'Normatividad relacionada', toBullets(item.normatividad, 3, 260), C.gold);
+      box(0.55, 1.4, 6.05, 2.35, 'Hallazgo (resumen)', [summarizeText(item.hallazgo, 260)], C.navy);
+      box(6.75, 1.4, 5.6, 2.35, 'Riesgo', toBullets(item.riesgo, 2, 150), rc);
+      box(0.55, 3.9, 6.05, 2.35, 'Recomendación', [summarizeText(item.recomendacion, 260)], C.baja);
+      box(6.75, 3.9, 5.6, 2.35, 'Normatividad relacionada', toBullets(item.normatividad, 2, 130), C.gold);
 
       addFooter(s, pageCounter);
     });
