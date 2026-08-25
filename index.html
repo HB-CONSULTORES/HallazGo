@@ -1504,6 +1504,10 @@ function renderPptxDetails(){
           <input type="radio" name="pptxFormat" value="pptx"> Presentación (diapositivas)
         </label>
       </div>
+      <label id="pptxAiToggleWrap" style="display:none; align-items:center; gap:7px; font-size:12.5px; margin-top:9px; color:#555; cursor:pointer;">
+        <input type="checkbox" id="pptxUseAi" checked>
+        Redactar la presentación con IA (titulares y viñetas más naturales; si falla, se usa el resumen automático)
+      </label>
     </div>
     <div class="row2">
       <div class="field"><label>Nombre del cliente / entidad</label><input type="text" id="pptxCliente" placeholder="Ej: Fundación United Way"></div>
@@ -1526,6 +1530,7 @@ function renderPptxDetails(){
     r.addEventListener('change', ()=>{
       const fmt = body.querySelector('input[name="pptxFormat"]:checked').value;
       document.getElementById('pptxConfirmBtn').textContent = fmt==='word' ? 'Generar documento Word' : 'Generar presentación';
+      document.getElementById('pptxAiToggleWrap').style.display = fmt==='pptx' ? 'flex' : 'none';
     });
   });
 }
@@ -1552,9 +1557,49 @@ function renderPptxList(){
   });
 }
 
+// Le pide a la IA (Edge Function 'format-slides-ai', mismo patrón que
+// extract-hallazgos) que redacte cada hallazgo de la planilla como contenido
+// listo para diapositiva: un titular ejecutivo, el hallazgo resumido, viñetas
+// de riesgo y viñetas de recomendación. La normatividad NO se manda a la IA:
+// se deja tal cual la escribió el usuario, para no arriesgar que una cita
+// legal se altere o se invente. Devuelve un objeto { _tmpId: {...} } o lanza
+// error si la función falla, la cuota se agotó, etc. (el llamador decide el
+// respaldo).
+async function formatItemsForSlidesWithAI(chosen){
+  const payload = chosen.map(it=>({
+    id: it._tmpId,
+    itemLabel: it.itemLabel,
+    titulo: it.titulo,
+    hallazgo: it.hallazgo,
+    riesgo: it.riesgo,
+    recomendacion: it.recomendacion,
+  }));
+  const { data, error } = await sb.functions.invoke('format-slides-ai', {
+    body: { items: payload }
+  });
+  if(error){
+    let detail = error.message || 'Error desconocido';
+    try{
+      const ctx = error.context;
+      if(ctx && typeof ctx.json === 'function'){
+        const body = await ctx.json();
+        if(body && body.error) detail = body.error;
+      }
+    }catch(_e){}
+    throw new Error(detail);
+  }
+  const results = Array.isArray(data) ? data : (data && Array.isArray(data.items) ? data.items : null);
+  if(!results) throw new Error('La IA no devolvió un formato reconocible.');
+  const byId = {};
+  results.forEach(r=>{ if(r && r.id) byId[r.id] = r; });
+  return byId;
+}
+
 async function generateFromPlanilla(){
   const btn = document.getElementById('pptxConfirmBtn');
   const fmt = (document.querySelector('input[name="pptxFormat"]:checked') || {}).value || 'word';
+  const useAiCheckbox = document.getElementById('pptxUseAi');
+  const useAi = fmt === 'pptx' && useAiCheckbox && useAiCheckbox.checked;
   btn.disabled = true; btn.textContent = 'Generando…';
   try{
     const chosen = pptxItems.filter(i=>i.include).sort((a,b)=> a.itemNum - b.itemNum);
@@ -1570,7 +1615,19 @@ async function generateFromPlanilla(){
     if(fmt === 'word'){
       await generateWordFromPlanilla(chosen, meta);
     } else {
-      await generatePptxSlides(chosen, meta);
+      let aiById = null;
+      if(useAi){
+        try{
+          btn.textContent = 'Redactando con IA…';
+          aiById = await formatItemsForSlidesWithAI(chosen);
+        }catch(e){
+          console.error('IA de diapositivas no disponible, se usa el resumen automático:', e);
+          showToast('No se pudo redactar con IA (' + (e.message || 'error desconocido') + '); se generó con el resumen automático.');
+          aiById = null;
+        }
+      }
+      btn.textContent = 'Generando…';
+      await generatePptxSlides(chosen, meta, aiById);
     }
 
     document.getElementById('pptxOverlay').classList.add('hidden');
@@ -1682,33 +1739,47 @@ async function generateWordFromPlanilla(chosen, meta){
 
   chosen.forEach(item=>{
     const cleanTitulo = ((item.titulo||'').trim() || summarizeText(item.hallazgo, 70)).toUpperCase();
+    const hasNorm = !!String(item.normatividad||'').trim();
+
+    // Encabezados y celdas de la fila de contenido: la columna de Normatividad
+    // solo se agrega si el hallazgo realmente tiene normatividad relacionada;
+    // si no, las otras dos columnas se reparten el ancho completo.
+    const headerCells = hasNorm ? [
+      new TableCell({ width:{size:38,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('HALLAZGO / RECOMENDACIÓN')] }) ] }),
+      new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('RIESGO / BENEFICIO')] }) ] }),
+      new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('NORMATIVIDAD')] }) ] }),
+    ] : [
+      new TableCell({ width:{size:58,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('HALLAZGO / RECOMENDACIÓN')] }) ] }),
+      new TableCell({ width:{size:42,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('RIESGO / BENEFICIO')] }) ] }),
+    ];
+
+    const bodyCells = [
+      new TableCell({ borders:cellBorders, children:[
+        ...cellParagraphs(item.hallazgo),
+        new Paragraph({ children:[ labelRun('Recomendación:') ], spacing:{before:100, after:60} }),
+        ...cellParagraphs(item.recomendacion),
+      ]}),
+      new TableCell({ borders:cellBorders, children: cellParagraphs(item.riesgo) }),
+    ];
+    if(hasNorm){
+      bodyCells.push(new TableCell({ borders:cellBorders, children: cellParagraphs(item.normatividad) }));
+    }
+
     children.push(new Table({
       width:{ size:100, type:WidthType.PERCENTAGE },
       rows:[
-        // Fila 1: título del punto, en una sola celda que ocupa las 3 columnas
+        // Fila 1: título del punto, en una sola celda que ocupa todas las columnas
         new TableRow({ children:[
           new TableCell({
-            columnSpan: 3,
+            columnSpan: hasNorm ? 3 : 2,
             borders: cellBorders,
             children:[ new Paragraph({ heading: HeadingLevel.HEADING_2, children:[ labelRun(`${item.itemLabel}.  ${cleanTitulo}`) ], spacing:{after:0} }) ]
           }),
         ]}),
         // Fila 2: encabezados de columna, centrados
-        new TableRow({ children:[
-          new TableCell({ width:{size:38,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('HALLAZGO / RECOMENDACIÓN')] }) ] }),
-          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('RIESGO / BENEFICIO')] }) ] }),
-          new TableCell({ width:{size:31,type:WidthType.PERCENTAGE}, shading:{type:ShadingType.CLEAR, fill:'F7F7F3'}, borders:cellBorders, children:[ new Paragraph({ alignment: AlignmentType.CENTER, children:[labelRun('NORMATIVIDAD')] }) ] }),
-        ]}),
+        new TableRow({ children: headerCells }),
         // Fila 3: contenido, todo justificado, con rótulos en negrita y viñetas donde aplique
-        new TableRow({ children:[
-          new TableCell({ borders:cellBorders, children:[
-            ...cellParagraphs(item.hallazgo),
-            new Paragraph({ children:[ labelRun('Recomendación:') ], spacing:{before:100, after:60} }),
-            ...cellParagraphs(item.recomendacion),
-          ]}),
-          new TableCell({ borders:cellBorders, children: cellParagraphs(item.riesgo) }),
-          new TableCell({ borders:cellBorders, children: cellParagraphs(item.normatividad) }),
-        ]}),
+        new TableRow({ children: bodyCells }),
       ]
     }));
     children.push(new Paragraph({ text:'', spacing:{after:300} }));
@@ -1742,7 +1813,7 @@ async function generateWordFromPlanilla(chosen, meta){
 }
 
 /* ---------- Presentación en diapositivas, a partir de los hallazgos de la planilla ---------- */
-async function generatePptxSlides(chosen, meta){
+async function generatePptxSlides(chosen, meta, aiById){
   if(typeof PptxGenJS === 'undefined'){
     throw new Error('La librería para generar PowerPoint no cargó. Revisa tu conexión y vuelve a intentar.');
   }
@@ -1875,17 +1946,27 @@ async function generatePptxSlides(chosen, meta){
     }
 
     // ---------- Slides de detalle — una por hallazgo, resumidas y con viñetas ----------
+    // Nota sobre el contenido de cada caja: se le pasa un límite de caracteres
+    // amplio (no un recorte estricto) porque summarizeText()/toBullets() ya
+    // seleccionan la(s) idea(s) clave por sí solas; el límite alto es solo un
+    // resguardo para textos extremadamente largos. El tamaño de letra de cada
+    // caja se autoajusta (fit:'shrink') para que el texto completo quepa sin
+    // recortarse ni terminar en "…".
     let pageCounter = 3 + totalSummaryParts;
     chosen.forEach(item=>{
       pageCounter++;
       const rc = riskColor(item.nivel);
       const rbg = riskBg(item.nivel);
+      const hasNorm = !!String(item.normatividad||'').trim();
+      // Contenido redactado por IA para este hallazgo, si se pidió y respondió
+      // bien; de lo contrario queda undefined y todo cae al resumen automático.
+      const ai = aiById && aiById[item._tmpId];
       s = pptx.addSlide(); s.background = { color:C.paper };
       s.addShape('rect', { x:0, y:0, w:0.14, h:7.5, fill:{ color:rc } });
 
       s.addShape('roundRect', { x:0.55, y:0.4, w:0.62, h:0.62, fill:{color:C.navy}, rectRadius:0.08 });
       s.addText(item.itemLabel, { x:0.55, y:0.4, w:0.62, h:0.62, align:'center', valign:'middle', fontSize:14, bold:true, color:'FFFFFF', fontFace:SANS });
-      const headTitle = item.titulo || summarizeText(item.hallazgo, 70);
+      const headTitle = (ai && ai.headline) || item.titulo || summarizeText(item.hallazgo, 70);
       s.addText(headTitle, { x:1.35, y:0.32, w:9.1, h:0.78, fontSize:17, bold:true, color:C.navy, fontFace:SERIF, valign:'middle' });
       s.addShape('roundRect', { x:10.6, y:0.42, w:2.25, h:0.55, fill:{color:rc}, rectRadius:0.08 });
       s.addText(`RIESGO ${riskLabel(item.nivel)}`, { x:10.6, y:0.42, w:2.25, h:0.55, align:'center', valign:'middle', fontSize:10.5, bold:true, color:'FFFFFF', fontFace:SANS, charSpacing:1 });
@@ -1899,10 +1980,29 @@ async function generatePptxSlides(chosen, meta){
         s.addText(items.map(t=>({ text:t, options:{ bullet:{ code:'25AA', indent:14 }, breakLine:true, paraSpaceAfter:5 } })),
           { x:x+0.24, y:y+0.5, w:w-0.48, h:h-0.66, fontSize:11, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.08, fit:'shrink', wrap:true });
       }
-      box(0.55, 1.4, 6.05, 2.35, 'Hallazgo (resumen)', [summarizeText(item.hallazgo, 260)], C.navy);
-      box(6.75, 1.4, 5.6, 2.35, 'Riesgo', toBullets(item.riesgo, 2, 150), rc);
-      box(0.55, 3.9, 6.05, 2.35, 'Recomendación', [summarizeText(item.recomendacion, 260)], C.baja);
-      box(6.75, 3.9, 5.6, 2.35, 'Normatividad relacionada', toBullets(item.normatividad, 2, 130), C.gold);
+
+      // Hallazgo y recomendación: texto de la IA si vino, si no el resumen
+      // automático. Riesgo: viñetas de la IA si vinieron, si no las heurísticas.
+      // Normatividad SIEMPRE sale del texto original (nunca de la IA).
+      const hallazgoContent = (ai && ai.hallazgoResumen) ? [ai.hallazgoResumen] : [summarizeText(item.hallazgo, 2000)];
+      const recomendacionContent = (ai && ai.recomendacionResumen) ? [ai.recomendacionResumen] : [summarizeText(item.recomendacion, 2000)];
+      const riesgoContentNorm = (ai && Array.isArray(ai.riesgoBullets) && ai.riesgoBullets.length) ? ai.riesgoBullets : toBullets(item.riesgo, 2, 400);
+      const riesgoContentFull = (ai && Array.isArray(ai.riesgoBullets) && ai.riesgoBullets.length) ? ai.riesgoBullets : toBullets(item.riesgo, 3, 400);
+
+      if(hasNorm){
+        // Con normatividad: la grilla clásica de 2x2.
+        box(0.55, 1.4, 6.05, 2.35, 'Hallazgo (resumen)', hallazgoContent, C.navy);
+        box(6.75, 1.4, 5.6, 2.35, 'Riesgo', riesgoContentNorm, rc);
+        box(0.55, 3.9, 6.05, 2.35, 'Recomendación', recomendacionContent, C.baja);
+        box(6.75, 3.9, 5.6, 2.35, 'Normatividad relacionada', toBullets(item.normatividad, 2, 400), C.gold);
+      } else {
+        // Sin normatividad: no se dibuja esa caja; el hallazgo toma todo el
+        // ancho arriba y riesgo/recomendación se reparten el ancho abajo, para
+        // que el espacio libre se aproveche en vez de dejar un campo vacío.
+        box(0.55, 1.4, 11.8, 2.35, 'Hallazgo (resumen)', hallazgoContent, C.navy);
+        box(0.55, 3.9, 6.05, 2.35, 'Riesgo', riesgoContentFull, rc);
+        box(6.75, 3.9, 5.6, 2.35, 'Recomendación', recomendacionContent, C.baja);
+      }
 
       addFooter(s, pageCounter);
     });
