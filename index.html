@@ -188,6 +188,47 @@ textarea{ resize:vertical; min-height:70px; line-height:1.5; }
 .gen-row-sub{ font-size:12px; color:var(--ink-soft); }
 .gen-count{ font-size:12.5px; color:var(--ink-soft); margin-bottom:12px; font-family:'IBM Plex Mono',monospace; }
 
+/* ---------- AI toggle (redactar presentación con IA) ---------- */
+.ai-toggle-box{
+  display:flex; align-items:flex-start; gap:12px;
+  margin-top:12px; padding:14px 16px;
+  border:1.5px solid var(--accent); border-radius:8px;
+  background:linear-gradient(135deg, rgba(62,111,101,0.09), rgba(62,111,101,0.02));
+  cursor:pointer; transition:border-color .15s ease, background .15s ease;
+}
+.ai-toggle-box:hover{ border-color:var(--accent-dark); background:rgba(62,111,101,0.12); }
+.ai-toggle-box.is-off{ opacity:0.62; }
+.ai-toggle-icon{
+  flex:none; width:34px; height:34px; border-radius:8px;
+  background:var(--accent-dark); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px; box-shadow:0 2px 6px rgba(44,80,73,0.35);
+}
+.ai-toggle-copy{ flex:1; }
+.ai-toggle-title{
+  font-size:13.5px; font-weight:700; color:var(--ink);
+  display:flex; align-items:center; gap:7px; margin-bottom:2px;
+}
+.ai-toggle-badge{
+  font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:600;
+  letter-spacing:0.06em; color:#fff; background:var(--accent-dark);
+  padding:2px 6px; border-radius:3px;
+}
+.ai-toggle-desc{ font-size:12px; color:var(--ink-soft); line-height:1.4; }
+.ai-toggle-switch{
+  flex:none; position:relative; width:38px; height:22px; margin-top:2px;
+}
+.ai-toggle-switch input{ position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
+.ai-toggle-switch .track{
+  position:absolute; inset:0; background:var(--line); border-radius:999px; transition:background .15s ease;
+}
+.ai-toggle-switch .thumb{
+  position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.25); transition:transform .15s ease;
+}
+.ai-toggle-switch input:checked ~ .track{ background:var(--accent-dark); }
+.ai-toggle-switch input:checked ~ .thumb{ transform:translateX(16px); }
+
 .empty-state{
   text-align:center; padding:60px 20px; color:var(--ink-soft);
 }
@@ -1504,9 +1545,17 @@ function renderPptxDetails(){
           <input type="radio" name="pptxFormat" value="pptx"> Presentación (diapositivas)
         </label>
       </div>
-      <label id="pptxAiToggleWrap" style="display:none; align-items:center; gap:7px; font-size:12.5px; margin-top:9px; color:#555; cursor:pointer;">
-        <input type="checkbox" id="pptxUseAi" checked>
-        Redactar la presentación con IA (titulares y viñetas más naturales; si falla, se usa el resumen automático)
+      <label class="ai-toggle-box" id="pptxAiToggleWrap" style="display:none;">
+        <div class="ai-toggle-icon">✨</div>
+        <div class="ai-toggle-copy">
+          <div class="ai-toggle-title">Redactar con IA <span class="ai-toggle-badge">IA</span></div>
+          <div class="ai-toggle-desc">Titulares y viñetas más naturales para cada diapositiva. Si falla, se usa el resumen automático.</div>
+        </div>
+        <span class="ai-toggle-switch">
+          <input type="checkbox" id="pptxUseAi" checked>
+          <span class="track"></span>
+          <span class="thumb"></span>
+        </span>
       </label>
     </div>
     <div class="row2">
@@ -1532,6 +1581,11 @@ function renderPptxDetails(){
       document.getElementById('pptxConfirmBtn').textContent = fmt==='word' ? 'Generar documento Word' : 'Generar presentación';
       document.getElementById('pptxAiToggleWrap').style.display = fmt==='pptx' ? 'flex' : 'none';
     });
+  });
+  const aiToggleWrap = document.getElementById('pptxAiToggleWrap');
+  const aiToggleInput = document.getElementById('pptxUseAi');
+  aiToggleInput.addEventListener('change', ()=>{
+    aiToggleWrap.classList.toggle('is-off', !aiToggleInput.checked);
   });
 }
 
@@ -1837,54 +1891,61 @@ async function generatePptxSlides(chosen, meta, aiById){
 
     function addFooter(slide, pageNum){
       slide.addShape('line', { x:0, y:7.02, w:13.33, h:0, line:{ color:C.line, width:0.75 } });
-      slide.addText(meta.cliente.toUpperCase(), { x:0.5, y:7.1, w:7, h:0.28, fontSize:8.5, color:C.inkFaint, fontFace:SANS, charSpacing:1 });
-      slide.addText('INFORME DE AUDITORÍA  ·  CONFIDENCIAL', { x:6.5, y:7.1, w:5.4, h:0.28, align:'right', fontSize:8.5, color:C.inkFaint, fontFace:SANS, charSpacing:1 });
-      slide.addText(String(pageNum), { x:12.55, y:7.1, w:0.4, h:0.28, fontSize:9, color:C.gold, bold:true, align:'right', fontFace:SANS });
+      slide.addText(meta.cliente.toUpperCase(), { x:0.5, y:7.1, w:7, h:0.3, fontSize:9.5, color:C.inkFaint, fontFace:SANS, charSpacing:1 });
+      slide.addText('INFORME DE AUDITORÍA  ·  CONFIDENCIAL', { x:6.5, y:7.1, w:5.4, h:0.3, align:'right', fontSize:9.5, color:C.inkFaint, fontFace:SANS, charSpacing:1 });
+      slide.addText(String(pageNum), { x:12.55, y:7.1, w:0.4, h:0.3, fontSize:10, color:C.gold, bold:true, align:'right', fontFace:SANS });
     }
 
-    // ---------- Slide 1: portada (marino, acento dorado) ----------
+    // ---------- Slide 1: portada (marino, acento dorado, más llamativa) ----------
     let s = pptx.addSlide();
     s.background = { color: C.navy };
-    s.addShape('rect', { x:0, y:0, w:0.16, h:7.5, fill:{ color:C.gold } });
-    s.addText('INFORME DE AUDITORÍA', { x:0.9, y:2.15, w:9, h:0.4, fontSize:13, color:C.goldLight, bold:true, fontFace:SANS, charSpacing:3 });
-    s.addText('Hallazgos y Recomendaciones', { x:0.9, y:2.6, w:11.2, h:1.1, fontSize:36, color:'FFFFFF', bold:true, fontFace:SERIF });
-    s.addText(meta.cliente, { x:0.9, y:3.55, w:10.5, h:0.5, fontSize:19, color:C.inkFaint, fontFace:SANS });
-    s.addShape('line', { x:0.9, y:4.35, w:3.2, h:0, line:{ color:C.gold, width:1.5 } });
+    // Formas decorativas: franja lateral más gruesa + círculos sutiles para dar
+    // presencia empresarial sin restar seriedad.
+    s.addShape('rect', { x:0, y:0, w:0.22, h:7.5, fill:{ color:C.gold } });
+    s.addShape('ellipse', { x:10.3, y:-2.6, w:6.5, h:6.5, fill:{ color:C.navyLight, transparency:35 }, line:{type:'none'} });
+    s.addShape('ellipse', { x:11.6, y:4.6, w:3.6, h:3.6, fill:{ color:C.gold, transparency:88 }, line:{color:C.gold, width:1, transparency:55} });
+    s.addText('INFORME DE AUDITORÍA', { x:0.9, y:1.95, w:9, h:0.42, fontSize:15, color:C.goldLight, bold:true, fontFace:SANS, charSpacing:3.5 });
+    s.addText('Hallazgos y Recomendaciones', { x:0.85, y:2.4, w:11.6, h:1.35, fontSize:46, color:'FFFFFF', bold:true, fontFace:SERIF });
+    s.addText(meta.cliente, { x:0.9, y:3.7, w:10.5, h:0.55, fontSize:23, color:C.inkFaint, fontFace:SANS });
+    s.addShape('line', { x:0.9, y:4.5, w:3.6, h:0, line:{ color:C.gold, width:2.5 } });
     const infoLines = [
       meta.corte ? `Corte de auditoría:  ${meta.corte}` : '',
       `Fecha de presentación:  ${new Date().toLocaleDateString('es-CO',{ day:'numeric', month:'long', year:'numeric' })}`,
       `Preparado por:  ${meta.preparadoPor}`,
     ].filter(Boolean).join('\n');
-    s.addText(infoLines, { x:0.9, y:4.6, w:9, h:1.3, fontSize:12, color:C.inkFaint, fontFace:SANS, lineSpacingMultiple:1.6 });
-    s.addText(`${chosen.length} HALLAZGO${chosen.length!==1?'S':''} IDENTIFICADO${chosen.length!==1?'S':''}`, { x:0.9, y:6.35, w:8, h:0.35, fontSize:10.5, color:C.gold, bold:true, fontFace:SANS, charSpacing:2 });
+    s.addText(infoLines, { x:0.9, y:4.75, w:9, h:1.3, fontSize:14, color:C.inkFaint, fontFace:SANS, lineSpacingMultiple:1.65 });
+    s.addShape('roundRect', { x:0.9, y:6.35, w:4.6, h:0.55, fill:{color:C.gold}, rectRadius:0.28 });
+    s.addText(`${chosen.length} HALLAZGO${chosen.length!==1?'S':''} IDENTIFICADO${chosen.length!==1?'S':''}`, { x:0.9, y:6.35, w:4.6, h:0.55, align:'center', valign:'middle', fontSize:12, color:C.navy, bold:true, fontFace:SANS, charSpacing:1.5 });
 
     // ---------- Slide 2: resumen ejecutivo (corto, con mapa de color) ----------
     const counts = { alta:0, media:0, baja:0 };
     chosen.forEach(i=> counts[i.nivel]++ );
     s = pptx.addSlide(); s.background = { color:C.paper };
-    s.addShape('rect', { x:0, y:0, w:13.33, h:0.08, fill:{ color:C.gold } });
-    s.addText('Resumen Ejecutivo', { x:0.7, y:0.4, w:11, h:0.55, fontSize:25, bold:true, color:C.navy, fontFace:SERIF });
+    s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
+    s.addShape('rect', { x:0.7, y:0.42, w:0.5, h:0.06, fill:{ color:C.gold } });
+    s.addText('Resumen Ejecutivo', { x:0.7, y:0.55, w:11, h:0.6, fontSize:30, bold:true, color:C.navy, fontFace:SERIF });
     s.addText(`${chosen.length} hallazgo${chosen.length!==1?'s':''} identificado${chosen.length!==1?'s':''} en la auditoría, presentados por orden de punto y clasificados por nivel de riesgo mediante código de color.`,
-      { x:0.7, y:1.02, w:11.5, h:0.5, fontSize:12.5, color:C.inkSoft, fontFace:SANS });
+      { x:0.7, y:1.2, w:11.5, h:0.5, fontSize:14, color:C.inkSoft, fontFace:SANS });
 
     const boxW = 3.6, gap = 0.4;
     [['alta','ALTO',C.alta,C.altaBg], ['media','MEDIO',C.media,C.mediaBg], ['baja','BAJO',C.baja,C.bajaBg]].forEach(([key,label,color,bg], i)=>{
       const x = 0.7 + i*(boxW+gap);
-      s.addShape('roundRect', { x, y:1.75, w:boxW, h:1.9, fill:{color:bg}, line:{color, width:1}, rectRadius:0.06 });
-      s.addShape('rect', { x, y:1.75, w:boxW, h:0.09, fill:{ color } });
-      s.addText(String(counts[key]), { x, y:1.98, w:boxW, h:0.95, align:'center', fontSize:42, bold:true, color, fontFace:SERIF });
-      s.addText(`RIESGO ${label}`, { x, y:2.95, w:boxW, h:0.4, align:'center', fontSize:11.5, bold:true, color:C.ink, fontFace:SANS, charSpacing:1.5 });
+      s.addShape('roundRect', { x, y:1.95, w:boxW, h:2.1, fill:{color:bg}, line:{color, width:1.25}, rectRadius:0.08 });
+      s.addShape('rect', { x, y:1.95, w:boxW, h:0.12, fill:{ color } });
+      s.addText(String(counts[key]), { x, y:2.2, w:boxW, h:1.05, align:'center', fontSize:52, bold:true, color, fontFace:SERIF });
+      s.addText(`RIESGO ${label}`, { x, y:3.32, w:boxW, h:0.45, align:'center', fontSize:13.5, bold:true, color:C.ink, fontFace:SANS, charSpacing:1.5 });
     });
     s.addText('Código de color utilizado en toda la presentación para clasificar cada hallazgo según su nivel de riesgo.',
-      { x:0.7, y:3.9, w:11.5, h:0.4, fontSize:10.5, italic:true, color:C.inkFaint, fontFace:SANS });
+      { x:0.7, y:4.3, w:11.5, h:0.4, fontSize:11.5, italic:true, color:C.inkFaint, fontFace:SANS });
     addFooter(s, 2);
 
     // ---------- Slide 3: mapa de calor de riesgos (matriz) ----------
     s = pptx.addSlide(); s.background = { color:C.paper };
-    s.addShape('rect', { x:0, y:0, w:13.33, h:0.08, fill:{ color:C.gold } });
-    s.addText('Mapa de Calor de Riesgos', { x:0.7, y:0.4, w:9, h:0.55, fontSize:25, bold:true, color:C.navy, fontFace:SERIF });
+    s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
+    s.addShape('rect', { x:0.7, y:0.42, w:0.5, h:0.06, fill:{ color:C.gold } });
+    s.addText('Mapa de Calor de Riesgos', { x:0.7, y:0.55, w:9, h:0.6, fontSize:30, bold:true, color:C.navy, fontFace:SERIF });
     s.addText('Ubicación de cada hallazgo según su nivel de riesgo registrado en la planilla (vista de un solo eje).',
-      { x:0.7, y:1.0, w:11.5, h:0.4, fontSize:12.5, color:C.inkSoft, fontFace:SANS });
+      { x:0.7, y:1.18, w:11.5, h:0.4, fontSize:14, color:C.inkSoft, fontFace:SANS });
 
     const heatGridX = 2.55, heatGridY = 1.95, heatCellW = 3.25, heatCellH = 1.42;
     const rowLevels = ['alta','media','baja'];
@@ -1900,20 +1961,20 @@ async function generatePptxSlides(chosen, meta, aiById){
         if(isDiag){
           const pts = chosen.filter(it=>it.nivel===rowLevel).map(it=>it.itemLabel);
           const label = pts.length ? pts.map(p=>`Pto ${p}`).join('   •   ') : '—';
-          s.addText(label, { x:x+0.1, y:y+0.1, w:heatCellW-0.26, h:heatCellH-0.2, align:'center', valign:'middle', fontSize: pts.length>4?8.5:11, bold:true, color:'FFFFFF', fontFace:SANS });
+          s.addText(label, { x:x+0.1, y:y+0.1, w:heatCellW-0.26, h:heatCellH-0.2, align:'center', valign:'middle', fontSize: pts.length>4?9.5:13, bold:true, color:'FFFFFF', fontFace:SANS });
         }
       }
     }
-    s.addText('SEVERIDAD', { x:0.45, y:heatGridY, w:0.35, h:heatCellH*3-0.06, align:'center', valign:'middle', fontSize:9.5, bold:true, color:C.inkSoft, fontFace:SANS, vert:'vert270', charSpacing:1 });
+    s.addText('SEVERIDAD', { x:0.45, y:heatGridY, w:0.35, h:heatCellH*3-0.06, align:'center', valign:'middle', fontSize:10.5, bold:true, color:C.inkSoft, fontFace:SANS, vert:'vert270', charSpacing:1 });
     ['ALTA','MEDIA','BAJA'].forEach((lab,r)=>{
-      s.addText(lab, { x:0.9, y:heatGridY+r*heatCellH, w:1.5, h:heatCellH-0.06, align:'right', valign:'middle', fontSize:10.5, bold:true, color:C.inkSoft, fontFace:SANS });
+      s.addText(lab, { x:0.9, y:heatGridY+r*heatCellH, w:1.5, h:heatCellH-0.06, align:'right', valign:'middle', fontSize:12, bold:true, color:C.inkSoft, fontFace:SANS });
     });
     ['BAJO','MEDIO','ALTO'].forEach((lab,c)=>{
-      s.addText(lab, { x:heatGridX+c*heatCellW, y:heatGridY-0.36, w:heatCellW-0.06, h:0.3, align:'center', fontSize:10.5, bold:true, color:C.inkSoft, fontFace:SANS });
+      s.addText(lab, { x:heatGridX+c*heatCellW, y:heatGridY-0.36, w:heatCellW-0.06, h:0.3, align:'center', fontSize:12, bold:true, color:C.inkSoft, fontFace:SANS });
     });
-    s.addText('NIVEL DE RIESGO REGISTRADO', { x:heatGridX, y:heatGridY-0.68, w:heatCellW*3, h:0.28, align:'center', fontSize:9.5, bold:true, color:C.inkSoft, fontFace:SANS, charSpacing:1 });
+    s.addText('NIVEL DE RIESGO REGISTRADO', { x:heatGridX, y:heatGridY-0.68, w:heatCellW*3, h:0.28, align:'center', fontSize:10.5, bold:true, color:C.inkSoft, fontFace:SANS, charSpacing:1 });
     s.addText('Nota: matriz simplificada que ubica cada hallazgo según el nivel de riesgo (alto, medio, bajo) registrado en la planilla. No incluye ejes independientes de probabilidad e impacto.',
-      { x:0.7, y:heatGridY+3*heatCellH+0.1, w:11.9, h:0.45, fontSize:9.5, italic:true, color:C.inkFaint, fontFace:SANS });
+      { x:0.7, y:heatGridY+3*heatCellH+0.1, w:11.9, h:0.45, fontSize:10.5, italic:true, color:C.inkFaint, fontFace:SANS });
     addFooter(s, 3);
 
     // ---------- Slides de tabla resumen (por punto, en chunks) ----------
@@ -1923,25 +1984,26 @@ async function generatePptxSlides(chosen, meta, aiById){
       const part = chosen.slice(start, start+CHUNK);
       const partNum = Math.floor(start/CHUNK) + 1;
       s = pptx.addSlide(); s.background = { color:C.paper };
-      s.addShape('rect', { x:0, y:0, w:13.33, h:0.08, fill:{ color:C.gold } });
-      s.addText('Resumen de Hallazgos por Punto', { x:0.5, y:0.35, w:11, h:0.5, fontSize:22, bold:true, color:C.navy, fontFace:SERIF });
+      s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
+      s.addShape('rect', { x:0.5, y:0.38, w:0.5, h:0.06, fill:{ color:C.gold } });
+      s.addText('Resumen de Hallazgos por Punto', { x:0.5, y:0.5, w:11, h:0.55, fontSize:27, bold:true, color:C.navy, fontFace:SERIF });
       if(totalSummaryParts > 1){
-        s.addText(`Parte ${partNum} de ${totalSummaryParts}`, { x:0.5, y:0.82, w:8, h:0.3, fontSize:11, color:C.inkSoft, fontFace:SANS });
+        s.addText(`Parte ${partNum} de ${totalSummaryParts}`, { x:0.5, y:1.02, w:8, h:0.3, fontSize:12.5, color:C.inkSoft, fontFace:SANS });
       }
       const rows = [[
-        { text:'Punto', options:{ bold:true, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS } },
-        { text:'Hallazgo (resumen)', options:{ bold:true, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS } },
-        { text:'Nivel', options:{ bold:true, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS, align:'center' } },
+        { text:'Punto', options:{ bold:true, fontSize:12, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS } },
+        { text:'Hallazgo (resumen)', options:{ bold:true, fontSize:12, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS } },
+        { text:'Nivel', options:{ bold:true, fontSize:12, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS, align:'center' } },
       ]];
       part.forEach((item, i)=>{
         const zebra = i % 2 === 0 ? C.paper : C.bg;
         rows.push([
-          { text:item.itemLabel, options:{ fontSize:10, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
-          { text:summarizeText(item.titulo || item.hallazgo, 130), options:{ fontSize:10, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
-          { text:riskLabel(item.nivel), options:{ fontSize:10, bold:true, color:riskColor(item.nivel), fontFace:SANS, align:'center', fill:{color:zebra}, valign:'middle' } },
+          { text:item.itemLabel, options:{ fontSize:11.5, bold:true, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
+          { text:summarizeText(item.titulo || item.hallazgo, 130), options:{ fontSize:11.5, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
+          { text:riskLabel(item.nivel), options:{ fontSize:11.5, bold:true, color:riskColor(item.nivel), fontFace:SANS, align:'center', fill:{color:zebra}, valign:'middle' } },
         ]);
       });
-      s.addTable(rows, { x:0.5, y:1.25, w:12.35, colW:[1.3,9.55,1.5], fontFace:SANS, border:{type:'solid',color:C.line,pt:0.5}, autoPage:false, rowH:0.4 });
+      s.addTable(rows, { x:0.5, y:1.4, w:12.35, colW:[1.3,9.55,1.5], fontFace:SANS, border:{type:'solid',color:C.line,pt:0.5}, autoPage:false, rowH:0.42 });
       addFooter(s, 3 + partNum);
     }
 
@@ -1962,23 +2024,23 @@ async function generatePptxSlides(chosen, meta, aiById){
       // bien; de lo contrario queda undefined y todo cae al resumen automático.
       const ai = aiById && aiById[item._tmpId];
       s = pptx.addSlide(); s.background = { color:C.paper };
-      s.addShape('rect', { x:0, y:0, w:0.14, h:7.5, fill:{ color:rc } });
+      s.addShape('rect', { x:0, y:0, w:0.2, h:7.5, fill:{ color:rc } });
 
-      s.addShape('roundRect', { x:0.55, y:0.4, w:0.62, h:0.62, fill:{color:C.navy}, rectRadius:0.08 });
-      s.addText(item.itemLabel, { x:0.55, y:0.4, w:0.62, h:0.62, align:'center', valign:'middle', fontSize:14, bold:true, color:'FFFFFF', fontFace:SANS });
+      s.addShape('roundRect', { x:0.55, y:0.36, w:0.7, h:0.7, fill:{color:C.navy}, rectRadius:0.1 });
+      s.addText(item.itemLabel, { x:0.55, y:0.36, w:0.7, h:0.7, align:'center', valign:'middle', fontSize:16, bold:true, color:'FFFFFF', fontFace:SANS });
       const headTitle = (ai && ai.headline) || item.titulo || summarizeText(item.hallazgo, 70);
-      s.addText(headTitle, { x:1.35, y:0.32, w:9.1, h:0.78, fontSize:17, bold:true, color:C.navy, fontFace:SERIF, valign:'middle' });
-      s.addShape('roundRect', { x:10.6, y:0.42, w:2.25, h:0.55, fill:{color:rc}, rectRadius:0.08 });
-      s.addText(`RIESGO ${riskLabel(item.nivel)}`, { x:10.6, y:0.42, w:2.25, h:0.55, align:'center', valign:'middle', fontSize:10.5, bold:true, color:'FFFFFF', fontFace:SANS, charSpacing:1 });
-      s.addShape('line', { x:0.55, y:1.18, w:12.25, h:0, line:{ color:C.line, width:0.75 } });
+      s.addText(headTitle, { x:1.45, y:0.26, w:8.85, h:0.9, fontSize:21, bold:true, color:C.navy, fontFace:SERIF, valign:'middle' });
+      s.addShape('roundRect', { x:10.5, y:0.38, w:2.35, h:0.62, fill:{color:rc}, rectRadius:0.1 });
+      s.addText(`RIESGO ${riskLabel(item.nivel)}`, { x:10.5, y:0.38, w:2.35, h:0.62, align:'center', valign:'middle', fontSize:11.5, bold:true, color:'FFFFFF', fontFace:SANS, charSpacing:1 });
+      s.addShape('line', { x:0.55, y:1.2, w:12.25, h:0, line:{ color:C.line, width:1 } });
 
       function box(x,y,w,h,label,bullets,accentColor){
-        s.addShape('roundRect', { x, y, w, h, fill:{color:C.card}, line:{color:C.line,width:1}, rectRadius:0.05 });
-        s.addShape('rect', { x, y, w:0.06, h, fill:{ color:accentColor || C.gold } });
-        s.addText(label.toUpperCase(), { x:x+0.24, y:y+0.14, w:w-0.44, h:0.28, fontSize:10, bold:true, color:C.gold, fontFace:SANS, charSpacing:1.2 });
+        s.addShape('roundRect', { x, y, w, h, fill:{color:C.card}, line:{color:C.line,width:1}, rectRadius:0.06 });
+        s.addShape('rect', { x, y, w:0.08, h, fill:{ color:accentColor || C.gold } });
+        s.addText(label.toUpperCase(), { x:x+0.26, y:y+0.15, w:w-0.46, h:0.3, fontSize:11, bold:true, color:C.gold, fontFace:SANS, charSpacing:1.2 });
         const items = Array.isArray(bullets) ? bullets : [bullets];
-        s.addText(items.map(t=>({ text:t, options:{ bullet:{ code:'25AA', indent:14 }, breakLine:true, paraSpaceAfter:5 } })),
-          { x:x+0.24, y:y+0.5, w:w-0.48, h:h-0.66, fontSize:11, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.08, fit:'shrink', wrap:true });
+        s.addText(items.map(t=>({ text:t, options:{ bullet:{ code:'25AA', indent:16 }, breakLine:true, paraSpaceAfter:6 } })),
+          { x:x+0.26, y:y+0.54, w:w-0.5, h:h-0.7, fontSize:13.5, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.12, fit:'shrink', wrap:true });
       }
 
       // Hallazgo y recomendación: texto de la IA si vino, si no el resumen
@@ -2010,12 +2072,13 @@ async function generatePptxSlides(chosen, meta, aiById){
     // ---------- Slide final ----------
     s = pptx.addSlide();
     s.background = { color: C.navy };
-    s.addShape('rect', { x:0, y:0, w:0.16, h:7.5, fill:{ color:C.gold } });
-    s.addText('Cierre del Informe', { x:0.9, y:2.7, w:10, h:0.6, fontSize:28, bold:true, color:'FFFFFF', fontFace:SERIF });
-    s.addShape('line', { x:0.9, y:3.45, w:3.2, h:0, line:{ color:C.gold, width:1.5 } });
+    s.addShape('rect', { x:0, y:0, w:0.22, h:7.5, fill:{ color:C.gold } });
+    s.addShape('ellipse', { x:9.7, y:-3.2, w:7, h:7, fill:{ color:C.navyLight, transparency:35 }, line:{type:'none'} });
+    s.addText('Cierre del Informe', { x:0.9, y:2.55, w:10, h:0.7, fontSize:34, bold:true, color:'FFFFFF', fontFace:SERIF });
+    s.addShape('line', { x:0.9, y:3.4, w:3.6, h:0, line:{ color:C.gold, width:2.5 } });
     s.addText(`Se presentaron ${chosen.length} hallazgo${chosen.length!==1?'s':''}, ordenados por punto de auditoría (${chosen[0].itemLabel} a ${chosen[chosen.length-1].itemLabel}) y clasificados por nivel de riesgo. Quedamos atentos a cualquier comentario o aclaración sobre el contenido de este informe.`,
-      { x:0.9, y:3.7, w:10.2, h:1.2, fontSize:13, color:C.inkFaint, fontFace:SANS, lineSpacingMultiple:1.4 });
-    s.addText(meta.preparadoPor, { x:0.9, y:6.5, w:8, h:0.35, fontSize:11, bold:true, color:C.goldLight, fontFace:SANS, charSpacing:1 });
+      { x:0.9, y:3.65, w:10.2, h:1.2, fontSize:15, color:C.inkFaint, fontFace:SANS, lineSpacingMultiple:1.45 });
+    s.addText(meta.preparadoPor, { x:0.9, y:6.5, w:8, h:0.4, fontSize:13, bold:true, color:C.goldLight, fontFace:SANS, charSpacing:1 });
 
     const fileName = `presentacion_hallazgos_${new Date().toISOString().slice(0,10)}.pptx`;
     await pptx.writeFile({ fileName });
