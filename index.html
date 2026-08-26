@@ -1896,14 +1896,16 @@ async function generatePptxSlides(chosen, meta, aiById){
       slide.addText(String(pageNum), { x:12.55, y:7.1, w:0.4, h:0.3, fontSize:10, color:C.gold, bold:true, align:'right', fontFace:SANS });
     }
 
-    // ---------- Slide 1: portada (marino, acento dorado, más llamativa) ----------
+    // ---------- Slide 1: portada (marino, acento dorado, elegante) ----------
     let s = pptx.addSlide();
     s.background = { color: C.navy };
-    // Formas decorativas: franja lateral más gruesa + círculos sutiles para dar
-    // presencia empresarial sin restar seriedad.
+    // Formas decorativas: franja lateral + un motivo geométrico fino y contenido
+    // dentro de la hoja (nunca la agranda ni la recorta), para dar presencia
+    // empresarial sin caer en formas grandes o poco elegantes.
     s.addShape('rect', { x:0, y:0, w:0.22, h:7.5, fill:{ color:C.gold } });
-    s.addShape('ellipse', { x:10.3, y:-2.6, w:6.5, h:6.5, fill:{ color:C.navyLight, transparency:35 }, line:{type:'none'} });
-    s.addShape('ellipse', { x:11.6, y:4.6, w:3.6, h:3.6, fill:{ color:C.gold, transparency:88 }, line:{color:C.gold, width:1, transparency:55} });
+    s.addShape('ellipse', { x:9.55, y:3.85, w:3.65, h:3.65, fill:{type:'none'}, line:{ color:C.goldLight, width:1, transparency:55 } });
+    s.addShape('ellipse', { x:10.35, y:4.65, w:2.05, h:2.05, fill:{type:'none'}, line:{ color:C.goldLight, width:0.75, transparency:70 } });
+    s.addShape('line', { x:12.55, y:0.55, w:0, h:1.1, line:{ color:C.gold, width:1.25, transparency:35 } });
     s.addText('INFORME DE AUDITORÍA', { x:0.9, y:2.05, w:9, h:0.4, fontSize:13, color:C.goldLight, bold:true, fontFace:SANS, charSpacing:3 });
     s.addText('Hallazgos y Recomendaciones', { x:0.87, y:2.5, w:11.6, h:1.1, fontSize:37, color:'FFFFFF', bold:true, fontFace:SERIF });
     s.addText(meta.cliente, { x:0.9, y:3.55, w:10.5, h:0.5, fontSize:19, color:C.inkFaint, fontFace:SANS });
@@ -2071,32 +2073,61 @@ async function generatePptxSlides(chosen, meta, aiById){
         s.addShape('roundRect', { x, y, w, h, fill:{color:C.card}, line:{color:C.line,width:1}, rectRadius:0.06 });
         s.addShape('rect', { x, y, w:0.08, h, fill:{ color:accentColor || C.gold } });
         s.addText(label.toUpperCase(), { x:x+0.26, y:y+0.14, w:w-0.46, h:0.28, fontSize:10, bold:true, color:C.gold, fontFace:SANS, charSpacing:1.2 });
-        const items = Array.isArray(bullets) ? bullets : [bullets];
-        s.addText(items.map(t=>({ text:t, options:{ bullet:{ code:'25AA', indent:16 }, breakLine:true, paraSpaceAfter:6 } })),
+
+        // Salvaguarda de espacio: la caja tiene una capacidad de caracteres fija
+        // según su propio ancho/alto. Sin importar si el texto viene de la IA o
+        // del resumen automático, aquí se recorta lo necesario para que SIEMPRE
+        // quepa dentro del recuadro (fit:'shrink' queda solo como refuerzo).
+        const items = (Array.isArray(bullets) ? bullets : [bullets]).map(t=>String(t||'').trim()).filter(Boolean);
+        const availW = w - 0.5, availH = h - 0.66;
+        const charsPerLine = Math.max(18, Math.floor(availW * 9.5));
+        const maxLines = Math.max(3, Math.floor(availH / 0.205) - 1);
+        const maxTotalChars = charsPerLine * maxLines;
+        const perBulletCap = Math.max(30, Math.floor(maxTotalChars / Math.max(1, items.length)));
+        let used = 0;
+        const capped = [];
+        for(const raw of items){
+          const thisCap = Math.min(perBulletCap, maxTotalChars - used);
+          if(thisCap <= 20) break;
+          let t = raw;
+          if(t.length > thisCap){
+            const cut = t.slice(0, thisCap);
+            const lastSpace = cut.lastIndexOf(' ');
+            t = (lastSpace > thisCap*0.5 ? cut.slice(0,lastSpace) : cut).trim() + '…';
+          }
+          capped.push(t);
+          used += t.length;
+        }
+        if(!capped.length) capped.push((items[0]||'—').slice(0, maxTotalChars));
+
+        s.addText(capped.map(t=>({ text:t, options:{ bullet:{ code:'25AA', indent:16 }, breakLine:true, paraSpaceAfter:6 } })),
           { x:x+0.26, y:y+0.5, w:w-0.5, h:h-0.66, fontSize:12, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.12, fit:'shrink', wrap:true });
       }
 
       // Hallazgo y recomendación: texto de la IA si vino, si no el resumen
       // automático. Riesgo: viñetas de la IA si vinieron, si no las heurísticas.
       // Normatividad SIEMPRE sale del texto original (nunca de la IA).
-      const hallazgoContent = (ai && ai.hallazgoResumen) ? [ai.hallazgoResumen] : [summarizeText(item.hallazgo, 2000)];
-      const recomendacionContent = (ai && ai.recomendacionResumen) ? [ai.recomendacionResumen] : [summarizeText(item.recomendacion, 2000)];
-      const riesgoContentNorm = (ai && Array.isArray(ai.riesgoBullets) && ai.riesgoBullets.length) ? ai.riesgoBullets : toBullets(item.riesgo, 2, 400);
-      const riesgoContentFull = (ai && Array.isArray(ai.riesgoBullets) && ai.riesgoBullets.length) ? ai.riesgoBullets : toBullets(item.riesgo, 3, 400);
+      // Nota: aquí solo se da un límite amplio de referencia; el recorte que
+      // GARANTIZA que quepa en la diapositiva ocurre dentro de box() según el
+      // tamaño real de cada recuadro.
+      const hallazgoContent = (ai && ai.hallazgoResumen) ? [ai.hallazgoResumen] : [summarizeText(item.hallazgo, 500)];
+      const recomendacionContent = (ai && ai.recomendacionResumen) ? [ai.recomendacionResumen] : [summarizeText(item.recomendacion, 500)];
+      const riesgoContentNorm = (ai && Array.isArray(ai.riesgoBullets) && ai.riesgoBullets.length) ? ai.riesgoBullets : toBullets(item.riesgo, 2, 300);
+      const riesgoContentFull = (ai && Array.isArray(ai.riesgoBullets) && ai.riesgoBullets.length) ? ai.riesgoBullets : toBullets(item.riesgo, 3, 300);
 
       if(hasNorm){
         // Con normatividad: la grilla clásica de 2x2.
-        box(0.55, 1.4, 6.05, 2.35, 'Hallazgo (resumen)', hallazgoContent, C.navy);
-        box(6.75, 1.4, 5.6, 2.35, 'Riesgo', riesgoContentNorm, rc);
-        box(0.55, 3.9, 6.05, 2.35, 'Recomendación', recomendacionContent, C.baja);
-        box(6.75, 3.9, 5.6, 2.35, 'Normatividad relacionada', toBullets(item.normatividad, 2, 400), C.gold);
+        box(0.55, 1.3, 6.05, 2.5, 'Hallazgo (resumen)', hallazgoContent, C.navy);
+        box(6.75, 1.3, 5.6, 2.5, 'Riesgo', riesgoContentNorm, rc);
+        box(0.55, 3.95, 6.05, 2.5, 'Recomendación', recomendacionContent, C.baja);
+        box(6.75, 3.95, 5.6, 2.5, 'Normatividad relacionada', toBullets(item.normatividad, 2, 300), C.gold);
       } else {
         // Sin normatividad: no se dibuja esa caja; el hallazgo toma todo el
         // ancho arriba y riesgo/recomendación se reparten el ancho abajo, para
         // que el espacio libre se aproveche en vez de dejar un campo vacío.
-        box(0.55, 1.4, 11.8, 2.35, 'Hallazgo (resumen)', hallazgoContent, C.navy);
-        box(0.55, 3.9, 6.05, 2.35, 'Riesgo', riesgoContentFull, rc);
-        box(6.75, 3.9, 5.6, 2.35, 'Recomendación', recomendacionContent, C.baja);
+        box(0.55, 1.3, 11.8, 2.5, 'Hallazgo (resumen)', hallazgoContent, C.navy);
+        box(0.55, 3.95, 6.05, 2.5, 'Riesgo', riesgoContentFull, rc);
+        box(6.75, 3.95, 5.6, 2.5, 'Recomendación', recomendacionContent, C.baja);
       }
 
       addFooter(s, pageCounter);
@@ -2106,7 +2137,8 @@ async function generatePptxSlides(chosen, meta, aiById){
     s = pptx.addSlide();
     s.background = { color: C.navy };
     s.addShape('rect', { x:0, y:0, w:0.22, h:7.5, fill:{ color:C.gold } });
-    s.addShape('ellipse', { x:9.7, y:-3.2, w:7, h:7, fill:{ color:C.navyLight, transparency:35 }, line:{type:'none'} });
+    s.addShape('ellipse', { x:9.55, y:3.85, w:3.65, h:3.65, fill:{type:'none'}, line:{ color:C.goldLight, width:1, transparency:55 } });
+    s.addShape('ellipse', { x:10.35, y:4.65, w:2.05, h:2.05, fill:{type:'none'}, line:{ color:C.goldLight, width:0.75, transparency:70 } });
     s.addText('Cierre del Informe', { x:0.9, y:2.65, w:10, h:0.6, fontSize:28, bold:true, color:'FFFFFF', fontFace:SERIF });
     s.addShape('line', { x:0.9, y:3.4, w:3.4, h:0, line:{ color:C.gold, width:2 } });
     s.addText(`Se presentaron ${chosen.length} hallazgo${chosen.length!==1?'s':''}, ordenados por punto de auditoría (${chosen[0].itemLabel} a ${chosen[chosen.length-1].itemLabel}) y clasificados por nivel de riesgo. Quedamos atentos a cualquier comentario o aclaración sobre el contenido de este informe.`,
