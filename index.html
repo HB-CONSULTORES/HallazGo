@@ -1512,6 +1512,29 @@ function toBullets(text, maxBullets, maxCharsPerBullet){
   return parts.length ? parts : ['—'];
 }
 
+// Clasifica un hallazgo en una categoría temática de auditoría a partir de
+// palabras clave presentes en su texto (título + hallazgo + riesgo +
+// normatividad). Es una heurística basada en texto —no una etiqueta que venga
+// en la planilla—, útil para responder "¿qué tipo de hallazgo se repite más?"
+// sin necesitar una columna nueva. Si ninguna categoría tiene coincidencias
+// claras, se clasifica como "Otros".
+const CATEGORY_KEYWORDS = [
+  ['Cumplimiento normativo', [/normativ/i, /resoluci[oó]n/i, /decreto/i, /\bley\s?\d/i, /estatutos?/i, /reglamento/i, /\bdian\b/i, /circular/i, /obligaci[oó]n legal/i, /sanci[oó]n/i]],
+  ['Control interno', [/control interno/i, /segregaci[oó]n de funciones/i, /procedimiento/i, /pol[ií]tica/i, /manual/i, /arqueo/i, /conciliaci[oó]n/i, /autorizaci[oó]n/i, /aprobaci[oó]n/i, /custodio/i]],
+  ['Documentación y soporte', [/document/i, /soporte/i, /evidencia/i, /registro/i, /archivo/i, /expediente/i, /formaliza/i]],
+  ['Gobierno corporativo', [/junta directiva/i, /asamblea/i, /\bacta\b/i, /consejo/i, /comit[eé]/i, /representante legal/i, /vacante/i]],
+  ['Aspectos laborales', [/laboral/i, /reglamento interno de trabajo/i, /trabajador/i, /contrato de trabajo/i, /n[oó]mina/i, /empleado/i, /jornada/i]],
+];
+function classifyCategoria(item){
+  const text = [item.titulo, item.hallazgo, item.riesgo, item.normatividad].filter(Boolean).join(' ');
+  let best = 'Otros', bestScore = 0;
+  for(const [name, patterns] of CATEGORY_KEYWORDS){
+    const score = patterns.reduce((acc,re)=> acc + (re.test(text) ? 1 : 0), 0);
+    if(score > bestScore){ bestScore = score; best = name; }
+  }
+  return best;
+}
+
 async function handlePptxFile(file){
   try{
     renderPptxStatus('Leyendo la planilla…');
@@ -1906,18 +1929,18 @@ async function generatePptxSlides(chosen, meta, aiById){
     s.addShape('ellipse', { x:9.55, y:3.85, w:3.65, h:3.65, fill:{type:'none'}, line:{ color:C.goldLight, width:1, transparency:55 } });
     s.addShape('ellipse', { x:10.35, y:4.65, w:2.05, h:2.05, fill:{type:'none'}, line:{ color:C.goldLight, width:0.75, transparency:70 } });
     s.addShape('line', { x:12.55, y:0.55, w:0, h:1.1, line:{ color:C.gold, width:1.25, transparency:35 } });
-    s.addText('INFORME DE AUDITORÍA', { x:0.9, y:2.05, w:9, h:0.4, fontSize:13, color:C.goldLight, bold:true, fontFace:SANS, charSpacing:3 });
-    s.addText('Hallazgos y Recomendaciones', { x:0.87, y:2.5, w:11.6, h:1.1, fontSize:37, color:'FFFFFF', bold:true, fontFace:SERIF });
-    s.addText(meta.cliente, { x:0.9, y:3.55, w:10.5, h:0.5, fontSize:19, color:C.inkFaint, fontFace:SANS });
+    s.addText('INFORME DE AUDITORÍA', { x:0.9, y:2.05, w:9, h:0.4, fontSize:14, color:C.goldLight, bold:true, fontFace:SANS, charSpacing:3 });
+    s.addText('Hallazgos y Recomendaciones', { x:0.87, y:2.5, w:11.6, h:1.1, fontSize:39, color:'FFFFFF', bold:true, fontFace:SERIF });
+    s.addText(meta.cliente, { x:0.9, y:3.55, w:10.5, h:0.5, fontSize:20, color:C.inkFaint, fontFace:SANS });
     s.addShape('line', { x:0.9, y:4.3, w:3.4, h:0, line:{ color:C.gold, width:2 } });
     const infoLines = [
       meta.corte ? `Corte de auditoría:  ${meta.corte}` : '',
       `Fecha de presentación:  ${new Date().toLocaleDateString('es-CO',{ day:'numeric', month:'long', year:'numeric' })}`,
       `Preparado por:  ${meta.preparadoPor}`,
     ].filter(Boolean).join('\n');
-    s.addText(infoLines, { x:0.9, y:4.5, w:9, h:1.3, fontSize:12.5, color:C.inkFaint, fontFace:SANS, lineSpacingMultiple:1.6 });
-    s.addShape('roundRect', { x:0.9, y:6.25, w:4.3, h:0.5, fill:{color:C.gold}, rectRadius:0.25 });
-    s.addText(`${chosen.length} HALLAZGO${chosen.length!==1?'S':''} IDENTIFICADO${chosen.length!==1?'S':''}`, { x:0.9, y:6.25, w:4.3, h:0.5, align:'center', valign:'middle', fontSize:11, color:C.navy, bold:true, fontFace:SANS, charSpacing:1.3 });
+    s.addText(infoLines, { x:0.9, y:4.5, w:9, h:1.3, fontSize:13.5, color:C.inkFaint, fontFace:SANS, lineSpacingMultiple:1.6 });
+    s.addShape('roundRect', { x:0.9, y:6.25, w:4.5, h:0.5, fill:{color:C.gold}, rectRadius:0.25 });
+    s.addText(`${chosen.length} HALLAZGO${chosen.length!==1?'S':''} IDENTIFICADO${chosen.length!==1?'S':''}`, { x:0.9, y:6.25, w:4.5, h:0.5, align:'center', valign:'middle', fontSize:12, color:C.navy, bold:true, fontFace:SANS, charSpacing:1.3 });
 
     // ---------- Slide 2: resumen ejecutivo — dona + KPI destacado + barras ----------
     const counts = { alta:0, media:0, baja:0 };
@@ -1929,9 +1952,9 @@ async function generatePptxSlides(chosen, meta, aiById){
     s = pptx.addSlide(); s.background = { color:C.paper };
     s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
     s.addShape('rect', { x:0.7, y:0.4, w:0.5, h:0.06, fill:{ color:C.gold } });
-    s.addText('Resumen Ejecutivo', { x:0.7, y:0.52, w:11, h:0.55, fontSize:24, bold:true, color:C.navy, fontFace:SERIF });
+    s.addText('Resumen Ejecutivo', { x:0.7, y:0.52, w:11, h:0.55, fontSize:26, bold:true, color:C.navy, fontFace:SERIF });
     s.addText(`${chosen.length} hallazgo${chosen.length!==1?'s':''} identificado${chosen.length!==1?'s':''}, presentados por orden de punto y clasificados por nivel de riesgo.`,
-      { x:0.7, y:1.08, w:11.5, h:0.4, fontSize:12.5, color:C.inkSoft, fontFace:SANS });
+      { x:0.7, y:1.08, w:11.5, h:0.4, fontSize:13.5, color:C.inkSoft, fontFace:SANS });
 
     // Gráfico de dona: composición de la auditoría por nivel de riesgo.
     s.addChart('doughnut', [{
@@ -1942,16 +1965,16 @@ async function generatePptxSlides(chosen, meta, aiById){
       x:0.55, y:1.65, w:5.4, h:4.55,
       chartColors:[C.alta, C.media, C.baja],
       dataBorderColor:'FFFFFF', dataBorderWidth:2,
-      showLegend:true, legendPos:'b', legendFontSize:11.5, legendColor:C.inkSoft, legendFontFace:SANS,
-      showPercent:true, dataLabelColor:'FFFFFF', dataLabelFontSize:12.5, dataLabelFontFace:SANS, dataLabelFontBold:true,
+      showLegend:true, legendPos:'b', legendFontSize:13, legendColor:C.inkSoft, legendFontFace:SANS,
+      showPercent:true, dataLabelColor:'FFFFFF', dataLabelFontSize:14, dataLabelFontFace:SANS, dataLabelFontBold:true,
       holeSize:58,
     });
 
     // KPI destacado: el hallazgo dominante de la auditoría, a primer golpe de vista.
     s.addShape('roundRect', { x:6.35, y:1.65, w:6.28, h:1.4, fill:{color:riskBg(dominantKey)}, line:{color:riskColor(dominantKey), width:1.25}, rectRadius:0.09 });
     s.addShape('rect', { x:6.35, y:1.65, w:0.1, h:1.4, fill:{color:riskColor(dominantKey)} });
-    s.addText(`${dominantPct}%`, { x:6.62, y:1.65, w:2, h:1.4, align:'center', valign:'middle', fontSize:36, bold:true, color:riskColor(dominantKey), fontFace:SERIF });
-    s.addText(`de los hallazgos son de riesgo ${riskLabel(dominantKey)}`, { x:8.65, y:1.75, w:3.85, h:1.2, valign:'middle', fontSize:13.5, bold:true, color:C.ink, fontFace:SANS, lineSpacingMultiple:1.25 });
+    s.addText(`${dominantPct}%`, { x:6.62, y:1.65, w:2, h:1.4, align:'center', valign:'middle', fontSize:40, bold:true, color:riskColor(dominantKey), fontFace:SERIF });
+    s.addText(`de los hallazgos son de riesgo ${riskLabel(dominantKey)}`, { x:8.65, y:1.75, w:3.85, h:1.2, valign:'middle', fontSize:15, bold:true, color:C.ink, fontFace:SANS, lineSpacingMultiple:1.25 });
 
     // Barras de proporción por nivel, con conteo exacto al lado.
     const barMaxW = 4.05, barX = 6.35;
@@ -1959,24 +1982,24 @@ async function generatePptxSlides(chosen, meta, aiById){
       const y = 3.5 + i*0.92;
       const color = riskColor(key);
       const pct = counts[key] / totalHallazgos;
-      s.addText(`RIESGO ${label}`, { x:barX, y, w:2.3, h:0.3, fontSize:11.5, bold:true, color:C.ink, fontFace:SANS, charSpacing:0.6 });
-      s.addText(String(counts[key]), { x:barX+3.9, y, w:0.8, h:0.3, align:'right', fontSize:13.5, bold:true, color, fontFace:SANS });
+      s.addText(`RIESGO ${label}`, { x:barX, y, w:2.3, h:0.3, fontSize:12.5, bold:true, color:C.ink, fontFace:SANS, charSpacing:0.6 });
+      s.addText(String(counts[key]), { x:barX+3.9, y, w:0.8, h:0.3, align:'right', fontSize:15, bold:true, color, fontFace:SANS });
       s.addShape('roundRect', { x:barX, y:y+0.32, w:barMaxW, h:0.26, fill:{color:'EEF0F2'}, line:{type:'none'}, rectRadius:0.13 });
       s.addShape('roundRect', { x:barX, y:y+0.32, w:Math.max(0.14, barMaxW*pct), h:0.26, fill:{color}, line:{type:'none'}, rectRadius:0.13 });
     });
     s.addText('Código de color utilizado en toda la presentación para clasificar cada hallazgo según su nivel de riesgo.',
-      { x:0.7, y:6.5, w:11.9, h:0.4, fontSize:10.5, italic:true, color:C.inkFaint, fontFace:SANS });
+      { x:0.7, y:6.5, w:11.9, h:0.4, fontSize:11, italic:true, color:C.inkFaint, fontFace:SANS });
     addFooter(s, 2);
 
     // ---------- Slide 3: mapa de calor de riesgos (matriz) ----------
     s = pptx.addSlide(); s.background = { color:C.paper };
     s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
     s.addShape('rect', { x:0.7, y:0.4, w:0.5, h:0.06, fill:{ color:C.gold } });
-    s.addText('Mapa de Calor de Riesgos', { x:0.7, y:0.52, w:9, h:0.55, fontSize:24, bold:true, color:C.navy, fontFace:SERIF });
+    s.addText('Mapa de Calor de Riesgos', { x:0.7, y:0.52, w:9, h:0.55, fontSize:26, bold:true, color:C.navy, fontFace:SERIF });
     s.addText('Ubicación de cada hallazgo según su nivel de riesgo registrado en la planilla (vista de un solo eje).',
-      { x:0.7, y:1.08, w:11.5, h:0.4, fontSize:12.5, color:C.inkSoft, fontFace:SANS });
+      { x:0.7, y:1.08, w:11.5, h:0.4, fontSize:13.5, color:C.inkSoft, fontFace:SANS });
 
-    const heatGridX = 2.55, heatGridY = 1.95, heatCellW = 3.25, heatCellH = 1.42;
+    const heatGridX = 2.55, heatGridY = 2.25, heatCellW = 3.25, heatCellH = 1.35;
     const rowLevels = ['alta','media','baja'];
     const colLevels = ['baja','media','alta'];
     for(let r=0; r<3; r++){
@@ -1990,21 +2013,97 @@ async function generatePptxSlides(chosen, meta, aiById){
         if(isDiag){
           const pts = chosen.filter(it=>it.nivel===rowLevel).map(it=>it.itemLabel);
           const label = pts.length ? pts.map(p=>`Pto ${p}`).join('   •   ') : '—';
-          s.addText(label, { x:x+0.1, y:y+0.1, w:heatCellW-0.26, h:heatCellH-0.2, align:'center', valign:'middle', fontSize: pts.length>4?9:12, bold:true, color:'FFFFFF', fontFace:SANS });
+          s.addText(label, { x:x+0.1, y:y+0.1, w:heatCellW-0.26, h:heatCellH-0.2, align:'center', valign:'middle', fontSize: pts.length>4?10:13, bold:true, color:'FFFFFF', fontFace:SANS });
         }
       }
     }
-    s.addText('SEVERIDAD', { x:0.45, y:heatGridY, w:0.35, h:heatCellH*3-0.06, align:'center', valign:'middle', fontSize:10, bold:true, color:C.inkSoft, fontFace:SANS, vert:'vert270', charSpacing:1 });
+    s.addText('SEVERIDAD', { x:0.45, y:heatGridY, w:0.35, h:heatCellH*3-0.06, align:'center', valign:'middle', fontSize:11, bold:true, color:C.inkSoft, fontFace:SANS, vert:'vert270', charSpacing:1 });
     ['ALTA','MEDIA','BAJA'].forEach((lab,r)=>{
-      s.addText(lab, { x:0.9, y:heatGridY+r*heatCellH, w:1.5, h:heatCellH-0.06, align:'right', valign:'middle', fontSize:11.5, bold:true, color:C.inkSoft, fontFace:SANS });
+      s.addText(lab, { x:0.9, y:heatGridY+r*heatCellH, w:1.5, h:heatCellH-0.06, align:'right', valign:'middle', fontSize:12.5, bold:true, color:C.inkSoft, fontFace:SANS });
     });
     ['BAJO','MEDIO','ALTO'].forEach((lab,c)=>{
-      s.addText(lab, { x:heatGridX+c*heatCellW, y:heatGridY-0.36, w:heatCellW-0.06, h:0.3, align:'center', fontSize:11.5, bold:true, color:C.inkSoft, fontFace:SANS });
+      s.addText(lab, { x:heatGridX+c*heatCellW, y:heatGridY-0.36, w:heatCellW-0.06, h:0.3, align:'center', fontSize:12.5, bold:true, color:C.inkSoft, fontFace:SANS });
     });
-    s.addText('NIVEL DE RIESGO REGISTRADO', { x:heatGridX, y:heatGridY-0.68, w:heatCellW*3, h:0.28, align:'center', fontSize:10, bold:true, color:C.inkSoft, fontFace:SANS, charSpacing:1 });
+    s.addText('NIVEL DE RIESGO REGISTRADO', { x:heatGridX, y:heatGridY-0.68, w:heatCellW*3, h:0.28, align:'center', fontSize:11, bold:true, color:C.inkSoft, fontFace:SANS, charSpacing:1 });
     s.addText('Nota: matriz simplificada que ubica cada hallazgo según el nivel de riesgo (alto, medio, bajo) registrado en la planilla. No incluye ejes independientes de probabilidad e impacto.',
-      { x:0.7, y:heatGridY+3*heatCellH+0.1, w:11.9, h:0.45, fontSize:10, italic:true, color:C.inkFaint, fontFace:SANS });
+      { x:0.7, y:heatGridY+3*heatCellH+0.1, w:11.9, h:0.45, fontSize:11, italic:true, color:C.inkFaint, fontFace:SANS });
     addFooter(s, 3);
+
+    // ---------- Slide 4: concentración por tipo de hallazgo (gráfico de barras) ----------
+    // Responde "¿qué tipo de hallazgo se repite más?" clasificando cada hallazgo
+    // por palabras clave de su propio texto (no es un campo capturado en la
+    // planilla; ver nota al pie de la diapositiva).
+    const categoryCounts = {};
+    chosen.forEach(item=>{
+      const cat = classifyCategoria(item);
+      categoryCounts[cat] = (categoryCounts[cat]||0) + 1;
+    });
+    const categoryEntries = Object.entries(categoryCounts).sort((a,b)=> b[1]-a[1]);
+
+    s = pptx.addSlide(); s.background = { color:C.paper };
+    s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
+    s.addShape('rect', { x:0.7, y:0.4, w:0.5, h:0.06, fill:{ color:C.gold } });
+    s.addText('Concentración por Tipo de Hallazgo', { x:0.7, y:0.52, w:10.5, h:0.55, fontSize:26, bold:true, color:C.navy, fontFace:SERIF });
+    s.addText('¿Qué tipo de situación se repite más? Clasificación temática automática a partir de palabras clave del hallazgo.',
+      { x:0.7, y:1.08, w:11.5, h:0.4, fontSize:13.5, color:C.inkSoft, fontFace:SANS });
+
+    const catChartH = Math.min(4.5, 0.62*categoryEntries.length + 0.3);
+    s.addChart('bar', [{
+      name:'Hallazgos por categoría',
+      labels: categoryEntries.map(([name])=>name),
+      values: categoryEntries.map(([,count])=>count),
+    }], {
+      x:1.9, y:1.75, w:10.0, h:catChartH,
+      barDir:'bar',
+      chartColors:[C.gold],
+      barGapWidthPct:35,
+      showValue:true, dataLabelPosition:'outEnd', dataLabelColor:C.navy, dataLabelFontSize:13, dataLabelFontFace:SANS, dataLabelFontBold:true,
+      catAxisLabelColor:C.ink, catAxisLabelFontSize:13, catAxisLabelFontFace:SANS,
+      valAxisHidden:true, valGridLine:{ style:'none' },
+      showLegend:false,
+    });
+    s.addText('Nota: la categoría es inferida por texto (heurística), no es un campo manual de la planilla. Para mayor precisión en futuras auditorías se recomienda agregar una columna "Tipo de hallazgo".',
+      { x:0.7, y:1.75+catChartH+0.15, w:11.9, h:0.5, fontSize:11, italic:true, color:C.inkFaint, fontFace:SANS });
+    addFooter(s, 4);
+
+    // ---------- Slide 5: prioridades de atención ----------
+    // Prioriza usando el único criterio disponible en la planilla (nivel de
+    // riesgo). Se explica la limitación en vez de inventar variables que no
+    // existen en los datos (impacto, probabilidad, antigüedad, estado).
+    s = pptx.addSlide(); s.background = { color:C.paper };
+    s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
+    s.addShape('rect', { x:0.7, y:0.4, w:0.5, h:0.06, fill:{ color:C.gold } });
+    s.addText('Prioridades de Atención', { x:0.7, y:0.52, w:10, h:0.55, fontSize:26, bold:true, color:C.navy, fontFace:SERIF });
+    s.addText('¿Qué debe atenderse primero? Priorización según el nivel de riesgo registrado en la planilla.',
+      { x:0.7, y:1.08, w:11.5, h:0.4, fontSize:13.5, color:C.inkSoft, fontFace:SANS });
+
+    const tiers = [
+      { key:'alta', icon:'🔴', label:'Atención inmediata', desc:'Riesgo alto: requiere acción correctiva a corto plazo.' },
+      { key:'media', icon:'🟠', label:'Seguimiento cercano', desc:'Riesgo medio: atender en el corto/mediano plazo.' },
+      { key:'baja', icon:'🟢', label:'Control rutinario', desc:'Riesgo bajo: monitoreo dentro del ciclo normal de control.' },
+    ];
+    const tierColW = 3.9, tierGap = 0.3, tierX0 = 0.7, tierY = 1.75, tierH = 4.35;
+    tiers.forEach((tier, i)=>{
+      const x = tierX0 + i*(tierColW+tierGap);
+      const items = chosen.filter(it=>it.nivel===tier.key);
+      const color = riskColor(tier.key);
+      s.addShape('roundRect', { x, y:tierY, w:tierColW, h:tierH, fill:{color:riskBg(tier.key)}, line:{color, width:1.25}, rectRadius:0.08 });
+      s.addShape('rect', { x, y:tierY, w:tierColW, h:0.1, fill:{color} });
+      s.addText(`${tier.icon}  ${tier.label.toUpperCase()}`, { x:x+0.25, y:tierY+0.22, w:tierColW-0.5, h:0.45, fontSize:14, bold:true, color:C.navy, fontFace:SANS });
+      s.addText(`${items.length} hallazgo${items.length!==1?'s':''}`, { x:x+0.25, y:tierY+0.65, w:tierColW-0.5, h:0.35, fontSize:12, bold:true, color, fontFace:SANS });
+      s.addText(tier.desc, { x:x+0.25, y:tierY+1.05, w:tierColW-0.5, h:0.55, fontSize:10.5, italic:true, color:C.inkSoft, fontFace:SANS, lineSpacingMultiple:1.1 });
+      const listText = items.length
+        ? items.map(it=>{
+            const title = it.titulo || summarizeText(it.hallazgo, 90);
+            const short = title.length > 78 ? title.slice(0, 78).replace(/\s+\S*$/, '') + '…' : title;
+            return `Punto ${it.itemLabel} — ${short}`;
+          }).join('\n')
+        : 'Sin hallazgos en este nivel.';
+      s.addText(listText, { x:x+0.25, y:tierY+1.68, w:tierColW-0.5, h:tierH-1.9, fontSize:11, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.3, fit:'shrink', wrap:true });
+    });
+    s.addText('Nota: esta priorización usa el único criterio de severidad disponible en la planilla (nivel de riesgo). Para una priorización más granular —considerando impacto, probabilidad, antigüedad del hallazgo y estado de la acción correctiva— se recomienda incorporar esos campos en próximas auditorías.',
+      { x:0.7, y:6.55, w:11.9, h:0.45, fontSize:10.5, italic:true, color:C.inkFaint, fontFace:SANS });
+    addFooter(s, 5);
 
     // ---------- Slides de tabla resumen (por punto, en chunks) ----------
     const CHUNK = 12;
@@ -2015,25 +2114,25 @@ async function generatePptxSlides(chosen, meta, aiById){
       s = pptx.addSlide(); s.background = { color:C.paper };
       s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
       s.addShape('rect', { x:0.5, y:0.36, w:0.5, h:0.06, fill:{ color:C.gold } });
-      s.addText('Resumen de Hallazgos por Punto', { x:0.5, y:0.48, w:11, h:0.5, fontSize:22, bold:true, color:C.navy, fontFace:SERIF });
+      s.addText('Resumen de Hallazgos por Punto', { x:0.5, y:0.48, w:11, h:0.5, fontSize:24, bold:true, color:C.navy, fontFace:SERIF });
       if(totalSummaryParts > 1){
-        s.addText(`Parte ${partNum} de ${totalSummaryParts}`, { x:0.5, y:0.96, w:8, h:0.3, fontSize:11.5, color:C.inkSoft, fontFace:SANS });
+        s.addText(`Parte ${partNum} de ${totalSummaryParts}`, { x:0.5, y:0.96, w:8, h:0.3, fontSize:12.5, color:C.inkSoft, fontFace:SANS });
       }
       const rows = [[
-        { text:'Punto', options:{ bold:true, fontSize:11, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS } },
-        { text:'Hallazgo (resumen)', options:{ bold:true, fontSize:11, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS } },
-        { text:'Nivel', options:{ bold:true, fontSize:11, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS, align:'center' } },
+        { text:'Punto', options:{ bold:true, fontSize:12.5, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS } },
+        { text:'Hallazgo (resumen)', options:{ bold:true, fontSize:12.5, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS } },
+        { text:'Nivel', options:{ bold:true, fontSize:12.5, color:'FFFFFF', fill:{color:C.navy}, fontFace:SANS, align:'center' } },
       ]];
       part.forEach((item, i)=>{
         const zebra = i % 2 === 0 ? C.paper : C.bg;
         rows.push([
-          { text:item.itemLabel, options:{ fontSize:10.5, bold:true, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
-          { text:summarizeText(item.titulo || item.hallazgo, 130), options:{ fontSize:10.5, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
-          { text:riskLabel(item.nivel), options:{ fontSize:10.5, bold:true, color:riskColor(item.nivel), fontFace:SANS, align:'center', fill:{color:zebra}, valign:'middle' } },
+          { text:item.itemLabel, options:{ fontSize:12, bold:true, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
+          { text:summarizeText(item.titulo || item.hallazgo, 130), options:{ fontSize:12, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
+          { text:riskLabel(item.nivel), options:{ fontSize:12, bold:true, color:riskColor(item.nivel), fontFace:SANS, align:'center', fill:{color:zebra}, valign:'middle' } },
         ]);
       });
-      s.addTable(rows, { x:0.5, y:1.35, w:12.35, colW:[1.3,9.55,1.5], fontFace:SANS, border:{type:'solid',color:C.line,pt:0.5}, autoPage:false, rowH:0.4 });
-      addFooter(s, 3 + partNum);
+      s.addTable(rows, { x:0.5, y:1.35, w:12.35, colW:[1.3,9.55,1.5], fontFace:SANS, border:{type:'solid',color:C.line,pt:0.5}, autoPage:false, rowH:0.46 });
+      addFooter(s, 5 + partNum);
     }
 
     // ---------- Slides de detalle — una por hallazgo, resumidas y con viñetas ----------
@@ -2043,7 +2142,7 @@ async function generatePptxSlides(chosen, meta, aiById){
     // resguardo para textos extremadamente largos. El tamaño de letra de cada
     // caja se autoajusta (fit:'shrink') para que el texto completo quepa sin
     // recortarse ni terminar en "…".
-    let pageCounter = 3 + totalSummaryParts;
+    let pageCounter = 5 + totalSummaryParts;
     chosen.forEach(item=>{
       pageCounter++;
       const rc = riskColor(item.nivel);
@@ -2056,11 +2155,11 @@ async function generatePptxSlides(chosen, meta, aiById){
       s.addShape('rect', { x:0, y:0, w:0.2, h:7.5, fill:{ color:rc } });
 
       s.addShape('roundRect', { x:0.55, y:0.38, w:0.66, h:0.66, fill:{color:C.navy}, rectRadius:0.1 });
-      s.addText(item.itemLabel, { x:0.55, y:0.38, w:0.66, h:0.66, align:'center', valign:'middle', fontSize:14, bold:true, color:'FFFFFF', fontFace:SANS });
+      s.addText(item.itemLabel, { x:0.55, y:0.38, w:0.66, h:0.66, align:'center', valign:'middle', fontSize:15, bold:true, color:'FFFFFF', fontFace:SANS });
       const headTitle = (ai && ai.headline) || item.titulo || summarizeText(item.hallazgo, 70);
-      s.addText(headTitle, { x:1.4, y:0.28, w:8.85, h:0.86, fontSize:18, bold:true, color:C.navy, fontFace:SERIF, valign:'middle' });
+      s.addText(headTitle, { x:1.4, y:0.28, w:8.85, h:0.86, fontSize:20, bold:true, color:C.navy, fontFace:SERIF, valign:'middle', fit:'shrink', wrap:true });
       s.addShape('roundRect', { x:10.55, y:0.4, w:2.3, h:0.56, fill:{color:rc}, rectRadius:0.09 });
-      s.addText(`RIESGO ${riskLabel(item.nivel)}`, { x:10.55, y:0.4, w:2.3, h:0.56, align:'center', valign:'middle', fontSize:10.5, bold:true, color:'FFFFFF', fontFace:SANS, charSpacing:1 });
+      s.addText(`RIESGO ${riskLabel(item.nivel)}`, { x:10.55, y:0.4, w:2.3, h:0.56, align:'center', valign:'middle', fontSize:11.5, bold:true, color:'FFFFFF', fontFace:SANS, charSpacing:1 });
       // Medidor de severidad: 3 segmentos, tantos rellenos como el nivel del hallazgo.
       const sevOrder = { baja:1, media:2, alta:3 };
       const sevFilled = sevOrder[item.nivel] || 2;
@@ -2072,16 +2171,19 @@ async function generatePptxSlides(chosen, meta, aiById){
       function box(x,y,w,h,label,bullets,accentColor){
         s.addShape('roundRect', { x, y, w, h, fill:{color:C.card}, line:{color:C.line,width:1}, rectRadius:0.06 });
         s.addShape('rect', { x, y, w:0.08, h, fill:{ color:accentColor || C.gold } });
-        s.addText(label.toUpperCase(), { x:x+0.26, y:y+0.14, w:w-0.46, h:0.28, fontSize:10, bold:true, color:C.gold, fontFace:SANS, charSpacing:1.2 });
+        s.addText(label.toUpperCase(), { x:x+0.26, y:y+0.14, w:w-0.46, h:0.3, fontSize:11, bold:true, color:C.gold, fontFace:SANS, charSpacing:1.2 });
 
         // Salvaguarda de espacio: la caja tiene una capacidad de caracteres fija
-        // según su propio ancho/alto. Sin importar si el texto viene de la IA o
-        // del resumen automático, aquí se recorta lo necesario para que SIEMPRE
-        // quepa dentro del recuadro (fit:'shrink' queda solo como refuerzo).
+        // según su propio ancho/alto y el tamaño de letra usado (BODY_FS). Sin
+        // importar si el texto viene de la IA o del resumen automático, aquí se
+        // recorta lo necesario para que SIEMPRE quepa dentro del recuadro
+        // (fit:'shrink' queda solo como refuerzo, no como mecanismo principal).
+        const BODY_FS = 13.5;
         const items = (Array.isArray(bullets) ? bullets : [bullets]).map(t=>String(t||'').trim()).filter(Boolean);
-        const availW = w - 0.5, availH = h - 0.66;
-        const charsPerLine = Math.max(18, Math.floor(availW * 9.5));
-        const maxLines = Math.max(3, Math.floor(availH / 0.205) - 1);
+        const availW = w - 0.5, availH = h - 0.68;
+        const charsPerLine = Math.max(16, Math.floor(availW * (114 / BODY_FS)));
+        const lineHeightIn = (BODY_FS/72)*1.12 + (6/72);
+        const maxLines = Math.max(3, Math.floor(availH / lineHeightIn) - 1);
         const maxTotalChars = charsPerLine * maxLines;
         const perBulletCap = Math.max(30, Math.floor(maxTotalChars / Math.max(1, items.length)));
         let used = 0;
@@ -2101,7 +2203,7 @@ async function generatePptxSlides(chosen, meta, aiById){
         if(!capped.length) capped.push((items[0]||'—').slice(0, maxTotalChars));
 
         s.addText(capped.map(t=>({ text:t, options:{ bullet:{ code:'25AA', indent:16 }, breakLine:true, paraSpaceAfter:6 } })),
-          { x:x+0.26, y:y+0.5, w:w-0.5, h:h-0.66, fontSize:12, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.12, fit:'shrink', wrap:true });
+          { x:x+0.26, y:y+0.52, w:w-0.5, h:h-0.68, fontSize:BODY_FS, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.12, fit:'shrink', wrap:true });
       }
 
       // Hallazgo y recomendación: texto de la IA si vino, si no el resumen
@@ -2133,17 +2235,58 @@ async function generatePptxSlides(chosen, meta, aiById){
       addFooter(s, pageCounter);
     });
 
+    // ---------- Insights de Auditoría ----------
+    // Conclusiones analíticas que sintetizan lo que dicen los datos (no repiten
+    // los hallazgos uno por uno). Cada insight sale directamente de los datos
+    // ya calculados arriba (nivel de riesgo, categoría temática, presencia de
+    // normatividad); nada aquí se inventa.
+    pageCounter++;
+    const withNorm = chosen.filter(it=> String(it.normatividad||'').trim()).length;
+    const withoutNorm = chosen.length - withNorm;
+    const topCategory = categoryEntries[0];
+    const top2Share = categoryEntries.slice(0,2).reduce((a,[,c])=>a+c,0);
+    const top2Pct = Math.round((top2Share/totalHallazgos)*100);
+
+    const insights = [
+      `El ${dominantPct}% de los hallazgos identificados corresponde a riesgo ${riskLabel(dominantKey).toLowerCase()}, concentrando la atención de la auditoría en un subconjunto puntual de situaciones.`,
+      topCategory ? `La categoría más recurrente es "${topCategory[0]}", presente en ${topCategory[1]} de ${chosen.length} hallazgos (${Math.round(topCategory[1]/totalHallazgos*100)}%).` : null,
+      categoryEntries.length >= 2 ? `Las dos categorías más frecuentes concentran el ${top2Pct}% del total, lo que sugiere focos de mejora puntuales más que problemas dispersos por toda la organización.` : null,
+      withoutNorm > 0
+        ? `${withoutNorm} de ${chosen.length} hallazgo${chosen.length!==1?'s':''} no cita${withoutNorm===1?'':'n'} una normatividad específica en la planilla, lo que puede dificultar sustentar formalmente su exigibilidad.`
+        : `La totalidad de los hallazgos cuenta con una referencia normativa explícita registrada en la planilla.`,
+    ].filter(Boolean);
+
+    s = pptx.addSlide(); s.background = { color:C.paper };
+    s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
+    s.addShape('rect', { x:0.7, y:0.4, w:0.5, h:0.06, fill:{ color:C.gold } });
+    s.addText('Insights de Auditoría', { x:0.7, y:0.52, w:10, h:0.55, fontSize:26, bold:true, color:C.navy, fontFace:SERIF });
+    s.addText('¿Qué nos está diciendo la información? Conclusiones que se desprenden de los datos, no un resumen de los hallazgos.',
+      { x:0.7, y:1.08, w:11.5, h:0.4, fontSize:13.5, color:C.inkSoft, fontFace:SANS });
+
+    const insightY0 = 1.85, insightGap = 0.22, insightH = (6.35 - insightY0 - insightGap*(insights.length-1)) / insights.length;
+    insights.forEach((text, i)=>{
+      const y = insightY0 + i*(insightH+insightGap);
+      s.addShape('roundRect', { x:0.7, y, w:11.9, h:insightH, fill:{color:C.card}, line:{color:C.line,width:1}, rectRadius:0.06 });
+      s.addShape('roundRect', { x:0.7, y, w:0.55, h:insightH, fill:{color:C.navy}, rectRadius:0.06 });
+      s.addText(String(i+1), { x:0.7, y, w:0.55, h:insightH, align:'center', valign:'middle', fontSize:16, bold:true, color:C.goldLight, fontFace:SERIF });
+      s.addText(text, { x:1.5, y:y+0.08, w:10.9, h:insightH-0.16, fontSize:13, color:C.ink, fontFace:SANS, valign:'middle', lineSpacingMultiple:1.2, fit:'shrink', wrap:true });
+    });
+    s.addText('Nota: los insights se calculan a partir de los mismos datos de la planilla (nivel de riesgo, texto del hallazgo y presencia de normatividad); no incorporan información externa.',
+      { x:0.7, y:6.55, w:11.9, h:0.4, fontSize:10.5, italic:true, color:C.inkFaint, fontFace:SANS });
+    addFooter(s, pageCounter);
+
     // ---------- Slide final ----------
+    pageCounter++;
     s = pptx.addSlide();
     s.background = { color: C.navy };
     s.addShape('rect', { x:0, y:0, w:0.22, h:7.5, fill:{ color:C.gold } });
     s.addShape('ellipse', { x:9.55, y:3.85, w:3.65, h:3.65, fill:{type:'none'}, line:{ color:C.goldLight, width:1, transparency:55 } });
     s.addShape('ellipse', { x:10.35, y:4.65, w:2.05, h:2.05, fill:{type:'none'}, line:{ color:C.goldLight, width:0.75, transparency:70 } });
-    s.addText('Cierre del Informe', { x:0.9, y:2.65, w:10, h:0.6, fontSize:28, bold:true, color:'FFFFFF', fontFace:SERIF });
+    s.addText('Cierre del Informe', { x:0.9, y:2.65, w:10, h:0.6, fontSize:30, bold:true, color:'FFFFFF', fontFace:SERIF });
     s.addShape('line', { x:0.9, y:3.4, w:3.4, h:0, line:{ color:C.gold, width:2 } });
     s.addText(`Se presentaron ${chosen.length} hallazgo${chosen.length!==1?'s':''}, ordenados por punto de auditoría (${chosen[0].itemLabel} a ${chosen[chosen.length-1].itemLabel}) y clasificados por nivel de riesgo. Quedamos atentos a cualquier comentario o aclaración sobre el contenido de este informe.`,
-      { x:0.9, y:3.6, w:10.2, h:1.2, fontSize:13.5, color:C.inkFaint, fontFace:SANS, lineSpacingMultiple:1.4 });
-    s.addText(meta.preparadoPor, { x:0.9, y:6.5, w:8, h:0.4, fontSize:12, bold:true, color:C.goldLight, fontFace:SANS, charSpacing:1 });
+      { x:0.9, y:3.6, w:10.2, h:1.2, fontSize:14.5, color:C.inkFaint, fontFace:SANS, lineSpacingMultiple:1.4 });
+    s.addText(meta.preparadoPor, { x:0.9, y:6.5, w:8, h:0.4, fontSize:13, bold:true, color:C.goldLight, fontFace:SANS, charSpacing:1 });
 
     const fileName = `presentacion_hallazgos_${new Date().toISOString().slice(0,10)}.pptx`;
     await pptx.writeFile({ fileName });
