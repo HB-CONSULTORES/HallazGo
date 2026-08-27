@@ -2083,6 +2083,44 @@ async function generatePptxSlides(chosen, meta, aiById){
       { key:'baja', icon:'🟢', label:'Control rutinario', desc:'Riesgo bajo: monitoreo dentro del ciclo normal de control.' },
     ];
     const tierColW = 3.9, tierGap = 0.3, tierX0 = 0.7, tierY = 1.75, tierH = 4.35;
+    // Ajusta la lista de prioridades de cada columna: busca el tamaño de letra
+    // y el largo de texto por hallazgo más grandes que quepan sin desbordar la
+    // tarjeta (se simula línea por línea, no se confía en el autoajuste de
+    // PowerPoint, que en la práctica no siempre reduce lo suficiente). Si ni al
+    // tamaño mínimo caben todos los hallazgos, se muestran los que sí caben
+    // bien y se añade un aviso "+N más" — la tarjeta nunca se desborda.
+    function fitPriorityList(items, listW, listH){
+      const OVERHEAD = 10; // aprox. "Punto 12 — "
+      const DECENT_MIN = 40; // por debajo de esto ya no es una idea útil
+      function heightNeeded(fs, capPerItem, n){
+        const charsPerLine = Math.max(16, Math.floor(listW * (108/fs)));
+        const rawLineH = (fs/72)*1.18;
+        const paraGapIn = 5/72;
+        let total = 0;
+        for(let i=0;i<n;i++){
+          const chars = Math.min(items[i]._t.length, capPerItem) + OVERHEAD;
+          const lines = Math.max(1, Math.ceil(chars/charsPerLine));
+          total += lines*rawLineH + paraGapIn;
+        }
+        return total;
+      }
+      const fsOptions = [11, 10.5, 10, 9.5, 9];
+      const capOptions = [140,120,100,85,70,55,40];
+      for(const fs of fsOptions){
+        for(const cap of capOptions){
+          if(heightNeeded(fs, cap, items.length) <= listH){
+            return { fs, cap, shown: items, hidden: 0 };
+          }
+        }
+      }
+      const fs = 9, cap = DECENT_MIN;
+      let n = items.length;
+      while(n > 1 && heightNeeded(fs, cap, n) + ((9/72)*1.18 + 5/72) > listH){
+        n--;
+      }
+      return { fs, cap, shown: items.slice(0, n), hidden: items.length - n };
+    }
+
     tiers.forEach((tier, i)=>{
       const x = tierX0 + i*(tierColW+tierGap);
       const items = chosen.filter(it=>it.nivel===tier.key);
@@ -2092,23 +2130,26 @@ async function generatePptxSlides(chosen, meta, aiById){
       s.addText(`${tier.icon}  ${tier.label.toUpperCase()}`, { x:x+0.25, y:tierY+0.22, w:tierColW-0.5, h:0.45, fontSize:14, bold:true, color:C.navy, fontFace:SANS });
       s.addText(`${items.length} hallazgo${items.length!==1?'s':''}`, { x:x+0.25, y:tierY+0.65, w:tierColW-0.5, h:0.35, fontSize:12, bold:true, color, fontFace:SANS });
       s.addText(tier.desc, { x:x+0.25, y:tierY+1.05, w:tierColW-0.5, h:0.55, fontSize:10.5, italic:true, color:C.inkSoft, fontFace:SANS, lineSpacingMultiple:1.1 });
-      // Se muestra el título completo de cada hallazgo (como viñeta, con salto
-      // de línea normal) en vez de cortarlo a un número fijo de caracteres: el
-      // tamaño de letra se autoajusta para que quepan todos los títulos completos.
-      // Solo se recorta como salvaguarda extrema si un título es exageradamente largo.
+
+      const listX = x+0.25, listY = tierY+1.68, listW = tierColW-0.5, listH = tierH-1.9;
       if(items.length){
-        const paragraphs = items.map(it=>{
-          let title = it.titulo || summarizeText(it.hallazgo, 110);
-          if(title.length > 200){
-            const cut = title.slice(0, 200);
+        const withTitle = items.map(it=> ({ it, _t: it.titulo || summarizeText(it.hallazgo, 140) }));
+        const { fs, cap, shown, hidden } = fitPriorityList(withTitle, listW, listH);
+        const paragraphs = shown.map(({it,_t})=>{
+          let title = _t;
+          if(title.length > cap){
+            const cut = title.slice(0, cap);
             const lastSpace = cut.lastIndexOf(' ');
-            title = (lastSpace > 100 ? cut.slice(0,lastSpace) : cut).trim() + '…';
+            title = (lastSpace > cap*0.5 ? cut.slice(0,lastSpace) : cut).trim() + '…';
           }
-          return { text:`Punto ${it.itemLabel} — ${title}`, options:{ bullet:{ code:'25AA', indent:14 }, breakLine:true, paraSpaceAfter:8 } };
+          return { text:`Punto ${it.itemLabel} — ${title}`, options:{ bullet:{ code:'25AA', indent:14 }, breakLine:true, paraSpaceAfter:5 } };
         });
-        s.addText(paragraphs, { x:x+0.25, y:tierY+1.68, w:tierColW-0.5, h:tierH-1.9, fontSize:11.5, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.22, fit:'shrink', wrap:true });
+        if(hidden > 0){
+          paragraphs.push({ text:`+ ${hidden} hallazgo${hidden!==1?'s':''} más en este nivel (ver detalle en las diapositivas siguientes)`, options:{ breakLine:true, italic:true, color:C.inkFaint } });
+        }
+        s.addText(paragraphs, { x:listX, y:listY, w:listW, h:listH, fontSize:fs, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.1, wrap:true });
       } else {
-        s.addText('Sin hallazgos en este nivel.', { x:x+0.25, y:tierY+1.68, w:tierColW-0.5, h:tierH-1.9, fontSize:11.5, italic:true, color:C.inkFaint, fontFace:SANS, valign:'top' });
+        s.addText('Sin hallazgos en este nivel.', { x:listX, y:listY, w:listW, h:listH, fontSize:11.5, italic:true, color:C.inkFaint, fontFace:SANS, valign:'top' });
       }
     });
     s.addText('Nota: esta priorización usa el único criterio de severidad disponible en la planilla (nivel de riesgo). Para una priorización más granular —considerando impacto, probabilidad, antigüedad del hallazgo y estado de la acción correctiva— se recomienda incorporar esos campos en próximas auditorías.',
