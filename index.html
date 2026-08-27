@@ -2092,14 +2092,24 @@ async function generatePptxSlides(chosen, meta, aiById){
       s.addText(`${tier.icon}  ${tier.label.toUpperCase()}`, { x:x+0.25, y:tierY+0.22, w:tierColW-0.5, h:0.45, fontSize:14, bold:true, color:C.navy, fontFace:SANS });
       s.addText(`${items.length} hallazgo${items.length!==1?'s':''}`, { x:x+0.25, y:tierY+0.65, w:tierColW-0.5, h:0.35, fontSize:12, bold:true, color, fontFace:SANS });
       s.addText(tier.desc, { x:x+0.25, y:tierY+1.05, w:tierColW-0.5, h:0.55, fontSize:10.5, italic:true, color:C.inkSoft, fontFace:SANS, lineSpacingMultiple:1.1 });
-      const listText = items.length
-        ? items.map(it=>{
-            const title = it.titulo || summarizeText(it.hallazgo, 90);
-            const short = title.length > 78 ? title.slice(0, 78).replace(/\s+\S*$/, '') + '…' : title;
-            return `Punto ${it.itemLabel} — ${short}`;
-          }).join('\n')
-        : 'Sin hallazgos en este nivel.';
-      s.addText(listText, { x:x+0.25, y:tierY+1.68, w:tierColW-0.5, h:tierH-1.9, fontSize:11, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.3, fit:'shrink', wrap:true });
+      // Se muestra el título completo de cada hallazgo (como viñeta, con salto
+      // de línea normal) en vez de cortarlo a un número fijo de caracteres: el
+      // tamaño de letra se autoajusta para que quepan todos los títulos completos.
+      // Solo se recorta como salvaguarda extrema si un título es exageradamente largo.
+      if(items.length){
+        const paragraphs = items.map(it=>{
+          let title = it.titulo || summarizeText(it.hallazgo, 110);
+          if(title.length > 200){
+            const cut = title.slice(0, 200);
+            const lastSpace = cut.lastIndexOf(' ');
+            title = (lastSpace > 100 ? cut.slice(0,lastSpace) : cut).trim() + '…';
+          }
+          return { text:`Punto ${it.itemLabel} — ${title}`, options:{ bullet:{ code:'25AA', indent:14 }, breakLine:true, paraSpaceAfter:8 } };
+        });
+        s.addText(paragraphs, { x:x+0.25, y:tierY+1.68, w:tierColW-0.5, h:tierH-1.9, fontSize:11.5, color:C.ink, fontFace:SANS, valign:'top', lineSpacingMultiple:1.22, fit:'shrink', wrap:true });
+      } else {
+        s.addText('Sin hallazgos en este nivel.', { x:x+0.25, y:tierY+1.68, w:tierColW-0.5, h:tierH-1.9, fontSize:11.5, italic:true, color:C.inkFaint, fontFace:SANS, valign:'top' });
+      }
     });
     s.addText('Nota: esta priorización usa el único criterio de severidad disponible en la planilla (nivel de riesgo). Para una priorización más granular —considerando impacto, probabilidad, antigüedad del hallazgo y estado de la acción correctiva— se recomienda incorporar esos campos en próximas auditorías.',
       { x:0.7, y:6.55, w:11.9, h:0.45, fontSize:10.5, italic:true, color:C.inkFaint, fontFace:SANS });
