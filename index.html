@@ -2156,12 +2156,40 @@ async function generatePptxSlides(chosen, meta, aiById){
       { x:0.7, y:6.55, w:11.9, h:0.45, fontSize:10.5, italic:true, color:C.inkFaint, fontFace:SANS });
     addFooter(s, 5);
 
-    // ---------- Slides de tabla resumen (por punto, en chunks) ----------
-    const CHUNK = 12;
-    const totalSummaryParts = Math.ceil(chosen.length / CHUNK);
-    for(let start=0; start<chosen.length; start += CHUNK){
-      const part = chosen.slice(start, start+CHUNK);
-      const partNum = Math.floor(start/CHUNK) + 1;
+    // ---------- Slides de tabla resumen (por punto, paginada por espacio real) ----------
+    // En vez de un número fijo de filas por diapositiva, se calcula cuántas
+    // líneas ocupará el resumen de cada hallazgo (varias descripciones envuelven
+    // a 2 líneas) y se arman las páginas de la tabla según el espacio vertical
+    // realmente disponible, para que la tabla nunca se desborde de la diapositiva.
+    const TABLE_ROW_FS = 12;
+    const TABLE_COL_HALLAZGO_W = 9.55;
+    const TABLE_HEADER_H = 0.46;
+    const TABLE_BODY_AVAIL_H = 5.05; // espacio disponible bajo el encabezado, con margen de seguridad
+    function summaryForRow(item){
+      return summarizeText(item.titulo || item.hallazgo, 160);
+    }
+    function estimateRowHeight(text){
+      const charsPerLine = Math.max(20, Math.floor(TABLE_COL_HALLAZGO_W * (108/TABLE_ROW_FS)));
+      const lines = Math.max(1, Math.ceil(text.length / charsPerLine));
+      return lines*0.22 + 0.16;
+    }
+    const tablePages = [];
+    let currentPage = [], currentH = 0;
+    chosen.forEach(item=>{
+      const h = estimateRowHeight(summaryForRow(item));
+      if(currentPage.length && currentH + h > TABLE_BODY_AVAIL_H){
+        tablePages.push(currentPage);
+        currentPage = [];
+        currentH = 0;
+      }
+      currentPage.push(item);
+      currentH += h;
+    });
+    if(currentPage.length) tablePages.push(currentPage);
+
+    const totalSummaryParts = tablePages.length;
+    tablePages.forEach((part, idx)=>{
+      const partNum = idx + 1;
       s = pptx.addSlide(); s.background = { color:C.paper };
       s.addShape('rect', { x:0, y:0, w:13.33, h:0.12, fill:{ color:C.gold } });
       s.addShape('rect', { x:0.5, y:0.36, w:0.5, h:0.06, fill:{ color:C.gold } });
@@ -2177,14 +2205,14 @@ async function generatePptxSlides(chosen, meta, aiById){
       part.forEach((item, i)=>{
         const zebra = i % 2 === 0 ? C.paper : C.bg;
         rows.push([
-          { text:item.itemLabel, options:{ fontSize:12, bold:true, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
-          { text:summarizeText(item.titulo || item.hallazgo, 130), options:{ fontSize:12, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
-          { text:riskLabel(item.nivel), options:{ fontSize:12, bold:true, color:riskColor(item.nivel), fontFace:SANS, align:'center', fill:{color:zebra}, valign:'middle' } },
+          { text:item.itemLabel, options:{ fontSize:TABLE_ROW_FS, bold:true, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
+          { text:summaryForRow(item), options:{ fontSize:TABLE_ROW_FS, fontFace:SANS, fill:{color:zebra}, valign:'middle' } },
+          { text:riskLabel(item.nivel), options:{ fontSize:TABLE_ROW_FS, bold:true, color:riskColor(item.nivel), fontFace:SANS, align:'center', fill:{color:zebra}, valign:'middle' } },
         ]);
       });
-      s.addTable(rows, { x:0.5, y:1.35, w:12.35, colW:[1.3,9.55,1.5], fontFace:SANS, border:{type:'solid',color:C.line,pt:0.5}, autoPage:false, rowH:0.46 });
+      s.addTable(rows, { x:0.5, y:1.35, w:12.35, colW:[1.3,9.55,1.5], fontFace:SANS, border:{type:'solid',color:C.line,pt:0.5}, autoPage:false, rowH:TABLE_HEADER_H });
       addFooter(s, 5 + partNum);
-    }
+    });
 
     // ---------- Slides de detalle — una por hallazgo, resumidas y con viñetas ----------
     // Nota sobre el contenido de cada caja: se le pasa un límite de caracteres
