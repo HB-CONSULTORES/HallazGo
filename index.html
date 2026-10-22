@@ -1310,7 +1310,7 @@ function normalizeNivelRiesgo(raw){
 function splitTituloCuerpo(text){
   const clean = String(text||'').trim();
   const idx = clean.indexOf(':');
-  if(idx > 6 && idx < 140){
+  if(idx > 6 && idx < 500){
     const before = clean.slice(0, idx).trim();
     const letters = before.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g, '');
     const upperLetters = letters.replace(/[^A-ZÁÉÍÓÚÑ]/g, '');
